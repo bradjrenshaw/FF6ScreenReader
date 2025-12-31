@@ -33,6 +33,7 @@ namespace FFVI_ScreenReader.Core
         private InputManager inputManager;
         private EntityCache entityCache;
         private EntityNavigator entityNavigator;
+        private MapViewer mapViewer;
 
         // Entity scanning
         private const float ENTITY_SCAN_INTERVAL = 5f;
@@ -80,6 +81,9 @@ namespace FFVI_ScreenReader.Core
             entityNavigator = new EntityNavigator(entityCache);
             entityNavigator.FilterByPathfinding = filterByPathfinding;
             entityNavigator.FilterMapExits = filterMapExits;
+
+            // Initialize map viewer
+            mapViewer = new MapViewer();
 
             // Initialize input manager
             inputManager = new InputManager(this);
@@ -196,6 +200,13 @@ namespace FFVI_ScreenReader.Core
                         string mapName = Field.MapNameResolver.GetCurrentMapName();
                         SpeakText($"Entering {mapName}", interrupt: false);
                         lastAnnouncedMapId = currentMapId;
+
+                        // Reset map viewer cursor on map transition
+                        var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
+                        if (playerController?.fieldPlayer != null)
+                        {
+                            mapViewer.SnapToPlayer(playerController.fieldPlayer.transform.localPosition);
+                        }
 
                         // Delay entity scan to allow new map to fully initialize
                         CoroutineManager.StartManaged(DelayedMapTransitionScan());
@@ -444,6 +455,48 @@ namespace FFVI_ScreenReader.Core
             string direction = GetDirectionName(offset);
             SpeakText($"Teleported {direction} of {entity.Name}");
             LoggerInstance.Msg($"Teleported {direction} of {entity.Name} to position {newPos}");
+        }
+
+        /// <summary>
+        /// Moves the map viewer cursor in the specified direction and announces tile contents.
+        /// </summary>
+        internal void MapViewerMove(Vector2 offset)
+        {
+            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
+            if (playerController?.fieldPlayer == null)
+            {
+                SpeakText("Not in field");
+                return;
+            }
+
+            Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
+
+            // Initialize cursor to player position if first use
+            if (!mapViewer.IsActive)
+            {
+                mapViewer.SnapToPlayer(playerPos);
+            }
+
+            mapViewer.MoveCursor(offset);
+            string description = mapViewer.DescribeTileAtCursor(entityCache);
+            SpeakText(description);
+        }
+
+        /// <summary>
+        /// Snaps the map viewer cursor back to the player's position.
+        /// </summary>
+        internal void MapViewerSnapToPlayer()
+        {
+            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
+            if (playerController?.fieldPlayer == null)
+            {
+                SpeakText("Not in field");
+                return;
+            }
+
+            Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
+            mapViewer.SnapToPlayer(playerPos);
+            SpeakText("Cursor reset to player");
         }
 
         private string GetDirectionName(Vector2 offset)

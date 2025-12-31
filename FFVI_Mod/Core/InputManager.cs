@@ -104,6 +104,10 @@ namespace FFVI_ScreenReader.Core
         /// </summary>
         private void HandleStatusScreenInput()
         {
+            // Skip J/L if Ctrl is held (reserved for map viewer)
+            if (IsCtrlHeld())
+                return;
+
             // On status screen: J/[ announces physical stats, L/] announces magical stats
             if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.LeftBracket))
             {
@@ -123,8 +127,11 @@ namespace FFVI_ScreenReader.Core
         /// </summary>
         private void HandleFieldInput()
         {
-            // Hotkey: J or [ to cycle backwards
-            if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.LeftBracket))
+            // Skip J/K/L if Ctrl is held (reserved for map viewer)
+            bool ctrlHeld = IsCtrlHeld();
+
+            // Hotkey: J or [ to cycle backwards (but not Ctrl+J)
+            if (!ctrlHeld && (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.LeftBracket)))
             {
                 // Check for Shift+J/[ (cycle categories backward)
                 if (IsShiftHeld())
@@ -138,14 +145,14 @@ namespace FFVI_ScreenReader.Core
                 }
             }
 
-            // Hotkey: K to repeat current entity
-            if (Input.GetKeyDown(KeyCode.K))
+            // Hotkey: K to repeat current entity (but not Ctrl+K)
+            if (!ctrlHeld && Input.GetKeyDown(KeyCode.K))
             {
                 mod.AnnounceEntityOnly();
             }
 
-            // Hotkey: L or ] to cycle forwards
-            if (Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.RightBracket))
+            // Hotkey: L or ] to cycle forwards (but not Ctrl+L)
+            if (!ctrlHeld && (Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.RightBracket)))
             {
                 // Check for Shift+L/] (cycle categories forward)
                 if (IsShiftHeld())
@@ -198,6 +205,27 @@ namespace FFVI_ScreenReader.Core
                 else if (Input.GetKeyDown(KeyCode.RightArrow))
                 {
                     mod.TeleportInDirection(new Vector2(16, 0)); // East
+                }
+                // Map viewer controls (Ctrl+I/K/J/L/O)
+                else if (Input.GetKeyDown(KeyCode.I))
+                {
+                    mod.MapViewerMove(new Vector2(0, 16)); // North
+                }
+                else if (Input.GetKeyDown(KeyCode.K))
+                {
+                    mod.MapViewerMove(new Vector2(0, -16)); // South
+                }
+                else if (Input.GetKeyDown(KeyCode.J))
+                {
+                    mod.MapViewerMove(new Vector2(-16, 0)); // West
+                }
+                else if (Input.GetKeyDown(KeyCode.L))
+                {
+                    mod.MapViewerMove(new Vector2(16, 0)); // East
+                }
+                else if (Input.GetKeyDown(KeyCode.O))
+                {
+                    mod.MapViewerSnapToPlayer();
                 }
             }
 
