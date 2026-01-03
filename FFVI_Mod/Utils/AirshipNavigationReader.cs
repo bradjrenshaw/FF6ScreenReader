@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using Il2CppLast.Map;
 using Il2Cpp;
+using static FFVI_ScreenReader.Utils.TileCoordinateConverter;
 
 namespace FFVI_ScreenReader.Utils
 {
@@ -82,13 +83,11 @@ namespace FFVI_ScreenReader.Utils
 
             try
             {
-                // Convert world position to cell position
+                // Convert world position to cell position (float for precise airship positioning)
                 int mapWidth = fieldController.GetCollisionLayerWidth();
                 int mapHeight = fieldController.GetCollisionLayerHeight();
 
-                float cellX = mapWidth * 0.5f + position.x * 0.0625f;
-                float cellY = mapHeight * 0.5f - position.y * 0.0625f;
-
+                var (cellX, cellY) = WorldToTileFloat(position, mapWidth, mapHeight);
                 Vector2 cellPos = new Vector2(cellX, cellY);
 
                 // Get cell attribute at position

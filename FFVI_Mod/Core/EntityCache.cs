@@ -2,10 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Il2Cpp;
 using FFVI_ScreenReader.Field;
 using FFVI_ScreenReader.Core.Filters;
+using FFVI_ScreenReader.Utils;
 using Il2CppLast.Entity.Field;
 using Il2CppLast.Map;
+using static FFVI_ScreenReader.Utils.TileCoordinateConverter;
 
 namespace FFVI_ScreenReader.Core
 {
@@ -330,11 +333,151 @@ namespace FFVI_ScreenReader.Core
         }
 
         /// <summary>
+        /// Finds a NavigableEntity that matches the given GameObject.
+        /// Walks up the hierarchy from the object checking each level against known entities.
+        /// Useful for matching colliders/triggers to their owning entity.
+        /// </summary>
+        /// <param name="gameObject">The GameObject to match (e.g., a collider's gameObject)</param>
+        /// <returns>The matching NavigableEntity, or null if not found</returns>
+        public NavigableEntity FindEntityByGameObject(GameObject gameObject)
+        {
+            if (gameObject == null)
+                return null;
+
+            // Walk up the hierarchy from the object, checking each level against entities
+            Transform current = gameObject.transform;
+
+            while (current != null)
+            {
+                GameObject currentObj = current.gameObject;
+
+                // Check this level against all entities
+                var uniqueEntities = entityMap.Values.Distinct();
+
+                foreach (var entity in uniqueEntities)
+                {
+                    // Handle GroupEntity - check each member
+                    if (entity is GroupEntity group)
+                    {
+                        foreach (var member in group.Members)
+                        {
+                            if (member?.GameEntity?.gameObject == currentObj)
+                                return member;
+                        }
+                    }
+                    else
+                    {
+                        if (entity?.GameEntity?.gameObject == currentObj)
+                            return entity;
+                    }
+                }
+
+                current = current.parent;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finds all entities at the specified world position.
+        /// Uses Physics2D for collider-based entities (handles multi-tile),
+        /// then checks entity cache for collider-less entities by tile position.
+        /// </summary>
+        /// <param name="worldPos">World position to check</param>
+        /// <param name="mapHandle">Map accessor for tile conversion</param>
+        /// <returns>List of entities at this position (no duplicates)</returns>
+        public List<NavigableEntity> FindEntitiesAtPosition(Vector3 worldPos, IMapAccessor mapHandle)
+        {
+            var result = new List<NavigableEntity>();
+            var processedEntities = new HashSet<NavigableEntity>();
+
+            // === Phase 1: Physics2D check for collider-based entities ===
+            // This correctly handles multi-tile entities since it checks collider overlap
+            Vector2 point = new Vector2(worldPos.x, worldPos.y);
+            Collider2D[] colliders = Physics2D.OverlapPointAll(point);
+
+            if (colliders != null)
+            {
+                foreach (var collider in colliders)
+                {
+                    if (collider == null || collider.gameObject == null)
+                        continue;
+
+                    NavigableEntity matchedEntity = FindEntityByGameObject(collider.gameObject);
+
+                    if (matchedEntity != null && !processedEntities.Contains(matchedEntity))
+                    {
+                        processedEntities.Add(matchedEntity);
+                        result.Add(matchedEntity);
+                    }
+                }
+            }
+
+            // === Phase 2: Entity cache check for collider-less entities ===
+            // For entities without colliders, check if their origin is on the position's tile
+            if (mapHandle != null)
+            {
+                var positionTile = WorldToTile(worldPos, mapHandle);
+
+                // Check each entity in the cache
+                foreach (var entity in entityMap.Values.Distinct())
+                {
+                    // Skip if already found via Physics2D
+                    if (processedEntities.Contains(entity))
+                        continue;
+
+                    // Handle GroupEntity - check each member
+                    if (entity is GroupEntity group)
+                    {
+                        foreach (var member in group.Members)
+                        {
+                            if (member == null || processedEntities.Contains(member))
+                                continue;
+
+                            if (IsEntityOnTile(member, positionTile, mapHandle))
+                            {
+                                processedEntities.Add(member);
+                                result.Add(member);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (IsEntityOnTile(entity, positionTile, mapHandle))
+                        {
+                            processedEntities.Add(entity);
+                            result.Add(entity);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Checks if an entity's position is on the specified tile.
+        /// </summary>
+        /// <param name="entity">Entity to check</param>
+        /// <param name="tile">Tile coordinates to check against</param>
+        /// <param name="mapHandle">Map accessor for coordinate conversion</param>
+        /// <returns>True if entity is on the tile</returns>
+        public bool IsEntityOnTile(NavigableEntity entity, TileCoordinates tile, IMapAccessor mapHandle)
+        {
+            var gameEntity = entity.GameEntity;
+            if (gameEntity?.transform == null)
+                return false;
+
+            var entityTile = WorldToTile(gameEntity.transform.localPosition, mapHandle);
+            return entityTile == tile;
+        }
+
+        /// <summary>
         /// Gets the player's current world position.
         /// </summary>
         private Vector3 GetPlayerPosition()
         {
-            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
+            var playerController = GameObjectCache.Get<FieldPlayerController>();
             if (playerController?.fieldPlayer == null)
                 return Vector3.zero;
 

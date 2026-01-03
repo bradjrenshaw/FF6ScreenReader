@@ -6,6 +6,8 @@ using Il2Cpp;
 using Il2CppLast.Entity.Field;
 using Il2CppLast.Map;
 using UnityEngine;
+using static FFVI_ScreenReader.Utils.TileCoordinateConverter;
+using static FFVI_ScreenReader.Utils.DirectionHelper;
 
 namespace FFVI_ScreenReader.Field
 {
@@ -138,18 +140,8 @@ namespace FFVI_ScreenReader.Field
                 int mapWidth = mapHandle.GetCollisionLayerWidth();
                 int mapHeight = mapHandle.GetCollisionLayerHeight();
 
-                // Touch controller formula: cellX = FloorToInt((mapWidth * 0.5) + (worldPos.x * 0.0625))
-                Vector3 startCell = new Vector3(
-                    Mathf.FloorToInt(mapWidth * 0.5f + playerWorldPos.x * 0.0625f),
-                    Mathf.FloorToInt(mapHeight * 0.5f - playerWorldPos.y * 0.0625f),  // Note: MINUS for Y!
-                    0
-                );
-
-                Vector3 destCell = new Vector3(
-                    Mathf.FloorToInt(mapWidth * 0.5f + targetWorldPos.x * 0.0625f),
-                    Mathf.FloorToInt(mapHeight * 0.5f - targetWorldPos.y * 0.0625f),
-                    0
-                );
+                Vector3 startCell = WorldToTileVector(playerWorldPos, mapWidth, mapHeight);
+                Vector3 destCell = WorldToTileVector(targetWorldPos, mapWidth, mapHeight);
 
                 // Set Z from player layer
                 if (player != null)
@@ -197,13 +189,7 @@ namespace FFVI_ScreenReader.Field
                         foreach (var offset in adjacentOffsets)
                         {
                             Vector3 adjacentTargetWorld = targetWorldPos + offset;
-
-                            // Convert to cell coordinates
-                            Vector3 adjacentDestCell = new Vector3(
-                                Mathf.FloorToInt(mapWidth * 0.5f + adjacentTargetWorld.x * 0.0625f),
-                                Mathf.FloorToInt(mapHeight * 0.5f - adjacentTargetWorld.y * 0.0625f),
-                                0
-                            );
+                            Vector3 adjacentDestCell = WorldToTileVector(adjacentTargetWorld, mapWidth, mapHeight);
 
                             // Try pathfinding with different layers
                             for (int tryDestZ = 2; tryDestZ >= 0; tryDestZ--)
@@ -303,60 +289,6 @@ namespace FFVI_ScreenReader.Field
             }
 
             return string.Join(", ", segments);
-        }
-
-        /// <summary>
-        /// Gets direction name from a normalized direction vector (supports 8 directions)
-        /// </summary>
-        private static string GetCardinalDirectionName(Vector3 dir)
-        {
-            // Handle diagonals first (when both X and Y components are significant)
-            // A normalized diagonal has components around ±0.707
-            if (Mathf.Abs(dir.x) > 0.4f && Mathf.Abs(dir.y) > 0.4f)
-            {
-                if (dir.y > 0 && dir.x > 0) return "Northeast";
-                if (dir.y > 0 && dir.x < 0) return "Northwest";
-                if (dir.y < 0 && dir.x > 0) return "Southeast";
-                if (dir.y < 0 && dir.x < 0) return "Southwest";
-            }
-
-            // Cardinal directions (when primarily on one axis)
-            if (Mathf.Abs(dir.y) > Mathf.Abs(dir.x))
-            {
-                return dir.y > 0 ? "North" : "South";
-            }
-            else if (Mathf.Abs(dir.x) > 0.1f)  // Avoid "Unknown" for tiny movements
-            {
-                return dir.x > 0 ? "East" : "West";
-            }
-
-            return "Unknown";
-        }
-
-        /// <summary>
-        /// Gets cardinal direction from player to target (uses WORLD coordinates)
-        /// </summary>
-        private static string GetDirection(Vector3 from, Vector3 to)
-        {
-            Vector3 diff = to - from;
-            float angle = Mathf.Atan2(diff.x, diff.y) * Mathf.Rad2Deg;
-
-            // Normalize to 0-360
-            if (angle < 0) angle += 360;
-
-            // Convert to cardinal/intercardinal directions
-            string result;
-            if (angle >= 337.5 || angle < 22.5) result = "North";
-            else if (angle >= 22.5 && angle < 67.5) result = "Northeast";
-            else if (angle >= 67.5 && angle < 112.5) result = "East";
-            else if (angle >= 112.5 && angle < 157.5) result = "Southeast";
-            else if (angle >= 157.5 && angle < 202.5) result = "South";
-            else if (angle >= 202.5 && angle < 247.5) result = "Southwest";
-            else if (angle >= 247.5 && angle < 292.5) result = "West";
-            else if (angle >= 292.5 && angle < 337.5) result = "Northwest";
-            else result = "Unknown";
-
-            return result;
         }
 
     }
