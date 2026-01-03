@@ -382,7 +382,7 @@ namespace FFVI_ScreenReader.Field
 
         public override int Priority => 8;
 
-        public override bool BlocksPathing => EventType == Il2Cpp.MapConstants.ObjectType.TelepoPoint;
+        public override bool BlocksPathing => false;
 
         protected override string GetDisplayName()
         {
