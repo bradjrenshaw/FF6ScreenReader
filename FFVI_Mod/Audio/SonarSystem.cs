@@ -4,6 +4,7 @@ using UnityEngine;
 using Il2Cpp;
 using Il2CppLast.Entity.Field;
 using Il2CppLast.Map;
+using FFVI_ScreenReader.Core;
 using FFVI_ScreenReader.Utils;
 
 namespace FFVI_ScreenReader.Audio
@@ -100,8 +101,9 @@ namespace FFVI_ScreenReader.Audio
         /// <summary>
         /// Performs a sonar scan in all four cardinal directions from the player's position.
         /// </summary>
+        /// <param name="entityCache">Entity cache to check for blocking entities</param>
         /// <returns>Scan results for all directions, or null if player not available</returns>
-        public SonarScanResult ScanCardinalDirections()
+        public SonarScanResult ScanCardinalDirections(EntityCache entityCache)
         {
             var playerController = GameObjectCache.Get<FieldPlayerController>();
             if (playerController?.fieldPlayer == null)
@@ -112,17 +114,17 @@ namespace FFVI_ScreenReader.Audio
 
             return new SonarScanResult
             {
-                North = ScanDirection(playerPos, CardinalDirection.North, playerLayer),
-                South = ScanDirection(playerPos, CardinalDirection.South, playerLayer),
-                East = ScanDirection(playerPos, CardinalDirection.East, playerLayer),
-                West = ScanDirection(playerPos, CardinalDirection.West, playerLayer)
+                North = ScanDirection(playerPos, CardinalDirection.North, playerLayer, entityCache),
+                South = ScanDirection(playerPos, CardinalDirection.South, playerLayer, entityCache),
+                East = ScanDirection(playerPos, CardinalDirection.East, playerLayer, entityCache),
+                West = ScanDirection(playerPos, CardinalDirection.West, playerLayer, entityCache)
             };
         }
 
         /// <summary>
         /// Scans in a single direction for blocking obstacles.
         /// </summary>
-        private SonarHit ScanDirection(Vector3 origin, CardinalDirection direction, int playerLayer)
+        private SonarHit ScanDirection(Vector3 origin, CardinalDirection direction, int playerLayer, EntityCache entityCache)
         {
             var hit = new SonarHit
             {
@@ -134,8 +136,11 @@ namespace FFVI_ScreenReader.Audio
             Vector2 origin2D = new Vector2(origin.x, origin.y);
             Vector2 dirVector = DirectionVectors[direction];
 
+            // Create layer mask for player's layer only
+            int layerMask = 1 << playerLayer;
+
             // Perform raycast to get all hits along the ray
-            RaycastHit2D[] rayHits = Physics2D.RaycastAll(origin2D, dirVector, MaxRange);
+            RaycastHit2D[] rayHits = Physics2D.RaycastAll(origin2D, dirVector, MaxRange, layerMask);
 
             // Find the closest blocking collider
             float closestDistance = MaxRange;
@@ -143,7 +148,7 @@ namespace FFVI_ScreenReader.Audio
 
             foreach (var rayHit in rayHits)
             {
-                if (rayHit.collider != null && IsBlockingCollider(rayHit.collider))
+                if (rayHit.collider != null && IsBlockingCollider(rayHit.collider, entityCache))
                 {
                     if (rayHit.distance < closestDistance)
                     {
@@ -166,7 +171,7 @@ namespace FFVI_ScreenReader.Audio
         /// <summary>
         /// Checks if a collider is a blocking obstacle.
         /// </summary>
-        private bool IsBlockingCollider(Collider2D collider)
+        private bool IsBlockingCollider(Collider2D collider, EntityCache entityCache)
         {
             if (collider == null || collider.gameObject == null)
                 return false;
@@ -175,34 +180,17 @@ namespace FFVI_ScreenReader.Audio
             if (collider.gameObject.name.Contains("Player"))
                 return false;
 
-            // Try to get FieldColliderEntity
-            var colliderEntity = collider.gameObject.GetComponent<FieldColliderEntity>();
-            if (colliderEntity == null)
-                colliderEntity = collider.gameObject.GetComponentInParent<FieldColliderEntity>();
+            // Check for matching entity in cache
+            var matchedEntity = entityCache.FindEntityByGameObject(collider.gameObject);
 
-            if (colliderEntity != null)
+            if (matchedEntity != null)
             {
-                // Check the enable field using IL2CPP reflection
-                try
-                {
-                    var il2cppType = colliderEntity.GetIl2CppType();
-                    var bindingFlags = Il2CppSystem.Reflection.BindingFlags.NonPublic |
-                                       Il2CppSystem.Reflection.BindingFlags.Instance;
-
-                    var enableField = il2cppType.GetField("enable", bindingFlags);
-                    bool enable = enableField != null &&
-                        enableField.GetValue(colliderEntity).Unbox<bool>();
-
-                    return enable;
-                }
-                catch
-                {
-                    // If we can't read the field, assume it's blocking to be safe
-                    return true;
-                }
+                // Entity found - use its BlocksPathing property
+                return matchedEntity.BlocksPathing;
             }
 
-            return false;
+            // No matched entity - assume blocking
+            return true;
         }
 
         /// <summary>

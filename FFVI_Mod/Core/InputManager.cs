@@ -299,6 +299,12 @@ namespace FFVI_ScreenReader.Core
             {
                 mod.PerformSonarScan();
             }
+
+            // Hotkey: 5 to debug colliders at cursor
+            if (Input.GetKeyDown(KeyCode.Alpha5))
+            {
+                mod.DebugCollidersAtCursor();
+            }
         }
 
         /// <summary>

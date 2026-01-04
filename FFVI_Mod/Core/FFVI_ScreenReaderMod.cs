@@ -745,11 +745,119 @@ namespace FFVI_ScreenReader.Core
         }
 
         /// <summary>
+        /// Debug: Announces detailed info about all colliders at the map viewer cursor position.
+        /// </summary>
+        internal void DebugCollidersAtCursor()
+        {
+            var playerController = Utils.GameObjectCache.Get<Il2CppLast.Map.FieldPlayerController>();
+            if (playerController?.fieldPlayer == null)
+            {
+                SpeakText("Not in field");
+                return;
+            }
+
+            Vector3 cursorPos = mapViewer.CursorPosition;
+            if (!mapViewer.IsActive)
+            {
+                cursorPos = playerController.fieldPlayer.transform.localPosition;
+            }
+
+            int playerLayer = playerController.fieldPlayer.gameObject.layer;
+            Vector2 point = new Vector2(cursorPos.x, cursorPos.y);
+            Collider2D[] colliders = UnityEngine.Physics2D.OverlapPointAll(point);
+
+            if (colliders == null || colliders.Length == 0)
+            {
+                SpeakText("No colliders at cursor");
+                return;
+            }
+
+            var parts = new System.Collections.Generic.List<string>();
+            parts.Add($"{colliders.Length} colliders");
+
+            foreach (var collider in colliders)
+            {
+                if (collider == null || collider.gameObject == null)
+                    continue;
+
+                string objName = collider.gameObject.name;
+                int layer = collider.gameObject.layer;
+                string layerMatch = layer == playerLayer ? "player layer" : $"layer {layer}";
+
+                // Try to get FieldColliderEntity and its enable state
+                var colliderEntity = collider.gameObject.GetComponent<Il2CppLast.Entity.Field.FieldColliderEntity>();
+                if (colliderEntity == null)
+                    colliderEntity = collider.gameObject.GetComponentInParent<Il2CppLast.Entity.Field.FieldColliderEntity>();
+
+                string enableState = "";
+                if (colliderEntity != null)
+                {
+                    try
+                    {
+                        var il2cppType = colliderEntity.GetIl2CppType();
+                        var bindingFlags = Il2CppSystem.Reflection.BindingFlags.NonPublic |
+                                           Il2CppSystem.Reflection.BindingFlags.Instance;
+                        var enableField = il2cppType.GetField("enable", bindingFlags);
+                        bool enable = enableField != null && enableField.GetValue(colliderEntity).Unbox<bool>();
+                        enableState = enable ? "enabled" : "disabled";
+                    }
+                    catch
+                    {
+                        enableState = "unknown";
+                    }
+                }
+
+                // Try to get FieldEntity directly from the GameObject hierarchy
+                var fieldEntity = collider.gameObject.GetComponent<Il2CppLast.Entity.Field.FieldEntity>();
+                if (fieldEntity == null)
+                    fieldEntity = collider.gameObject.GetComponentInParent<Il2CppLast.Entity.Field.FieldEntity>();
+
+                string gameTypeInfo = "no FieldEntity";
+                if (fieldEntity?.Property != null)
+                {
+                    var objType = (Il2Cpp.MapConstants.ObjectType)fieldEntity.Property.ObjectType;
+                    int objTypeInt = fieldEntity.Property.ObjectType;
+                    string entityName = fieldEntity.Property.Name ?? fieldEntity.gameObject?.name ?? "unknown";
+                    gameTypeInfo = $"ObjectType: {objType} ({objTypeInt}), name: {entityName}";
+                }
+                else if (fieldEntity != null)
+                {
+                    gameTypeInfo = $"FieldEntity but no Property";
+                }
+
+                // Also check if it's in our cache
+                var matchedEntity = entityCache.FindEntityByGameObject(collider.gameObject);
+                string cacheInfo;
+                bool wouldBlock;
+                if (matchedEntity != null)
+                {
+                    wouldBlock = matchedEntity.BlocksPathing;
+                    cacheInfo = $"cached as {matchedEntity.GetType().Name}, BlocksPathing={matchedEntity.BlocksPathing}";
+                }
+                else
+                {
+                    wouldBlock = true; // not cached = assumes blocking
+                    cacheInfo = "NOT CACHED - WILL BLOCK";
+                }
+
+                string entityInfo = $"{gameTypeInfo}, {cacheInfo}";
+
+                string colliderInfo = colliderEntity != null
+                    ? $"{objName}, {layerMatch}, {enableState}, {entityInfo}"
+                    : $"{objName}, {layerMatch}, not FieldColliderEntity, {entityInfo}";
+
+                parts.Add(colliderInfo);
+            }
+
+            SpeakText(string.Join(". ", parts));
+        }
+
+        /// <summary>
         /// Performs a sonar scan in all four cardinal directions and announces the results.
         /// </summary>
         internal void PerformSonarScan()
         {
-            var results = sonarSystem.ScanCardinalDirections();
+            var results = sonarSystem.ScanCardinalDirections(entityCache);
             string announcement = sonarSystem.FormatScanResultsForSpeech(results);
             SpeakText(announcement);
         }

@@ -120,6 +120,9 @@ namespace FFVI_ScreenReader.Field
                 case Il2Cpp.MapConstants.ObjectType.OpenTrigger:
                     return new DoorTriggerEntity { GameEntity = fieldEntity };
 
+                case Il2Cpp.MapConstants.ObjectType.Entity:
+                    return new BarrierEntity { GameEntity = fieldEntity };
+
                 case Il2Cpp.MapConstants.ObjectType.TelepoPoint:
                 case Il2Cpp.MapConstants.ObjectType.Event:
                 case Il2Cpp.MapConstants.ObjectType.SwitchEvent:

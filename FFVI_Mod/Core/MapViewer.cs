@@ -122,51 +122,21 @@ namespace FFVI_ScreenReader.Core
                     if (collider.gameObject.layer != playerLayer)
                         continue;
 
-                    // Try to get FieldColliderEntity
-                    var colliderEntity = collider.gameObject.GetComponent<FieldColliderEntity>();
-                    if (colliderEntity == null)
-                        colliderEntity = collider.gameObject.GetComponentInParent<FieldColliderEntity>();
+                    // Check for matching entity in cache
+                    NavigableEntity matchedEntity = entityCache.FindEntityByGameObject(collider.gameObject);
 
-                    if (colliderEntity != null)
+                    if (matchedEntity != null)
                     {
-                        // Check the enable field
-                        bool enable = false;
-                        try
-                        {
-                            var il2cppType = colliderEntity.GetIl2CppType();
-                            var bindingFlags = Il2CppSystem.Reflection.BindingFlags.NonPublic |
-                                               Il2CppSystem.Reflection.BindingFlags.Instance;
-
-                            var enableField = il2cppType.GetField("enable", bindingFlags);
-                            enable = enableField != null &&
-                                enableField.GetValue(colliderEntity).Unbox<bool>();
-                        }
-                        catch
-                        {
-                            // If we can't read the field, assume enabled to be safe
-                            enable = true;
-                        }
-
-                        // If not enabled, this collider doesn't block
-                        if (!enable)
-                            continue;
-
-                        // Enabled - check if it's a known entity with BlocksPathing
-                        NavigableEntity matchedEntity = entityCache.FindEntityByGameObject(collider.gameObject);
-
-                        if (matchedEntity != null)
-                        {
-                            // Entity found - use its BlocksPathing property
-                            if (matchedEntity.BlocksPathing)
-                                return "Blocked";
-                            // BlocksPathing is false, so this doesn't block
-                            continue;
-                        }
-                        else
-                        {
-                            // No matched entity - this is pure terrain collision, so it blocks
+                        // Entity found - use its BlocksPathing property
+                        if (matchedEntity.BlocksPathing)
                             return "Blocked";
-                        }
+                        // BlocksPathing is false, so this doesn't block
+                        continue;
+                    }
+                    else
+                    {
+                        // No matched entity - assume blocking
+                        return "Blocked";
                     }
                 }
 
