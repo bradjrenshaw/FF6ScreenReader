@@ -414,28 +414,5 @@ namespace FFVI_ScreenReader.Core
             return playerController.fieldPlayer.transform.position;
         }
 
-        /// <summary>
-        /// Gets a friendly name for an entity category.
-        /// </summary>
-        public static string GetCategoryName(EntityCategory category)
-        {
-            switch (category)
-            {
-                case EntityCategory.All:
-                    return "All";
-                case EntityCategory.Chests:
-                    return "Chests";
-                case EntityCategory.NPCs:
-                    return "NPCs";
-                case EntityCategory.MapExits:
-                    return "Map Exits";
-                case EntityCategory.Events:
-                    return "Events";
-                case EntityCategory.Vehicles:
-                    return "Vehicles";
-                default:
-                    return "Unknown";
-            }
-        }
     }
 }

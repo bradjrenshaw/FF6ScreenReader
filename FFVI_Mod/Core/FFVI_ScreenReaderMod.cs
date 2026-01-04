@@ -1,3 +1,4 @@
+using System.Linq;
 using MelonLoader;
 using FFVI_ScreenReader.Utils;
 using FFVI_ScreenReader.Field;
@@ -11,19 +12,6 @@ using Il2CppLast.Map;
 
 namespace FFVI_ScreenReader.Core
 {
-    /// <summary>
-    /// Entity category for filtering navigation targets
-    /// </summary>
-    public enum EntityCategory
-    {
-        All = 0,
-        Chests = 1,
-        NPCs = 2,
-        MapExits = 3,
-        Events = 4,
-        Vehicles = 5
-    }
-
     /// <summary>
     /// Main mod class for FFVI Screen Reader.
     /// Provides screen reader accessibility support for Final Fantasy VI Pixel Remaster.
@@ -39,9 +27,6 @@ namespace FFVI_ScreenReader.Core
 
         // Entity scanning
         private const float ENTITY_SCAN_INTERVAL = 5f;
-
-        // Category count derived from enum for safe cycling
-        private static readonly int CategoryCount = System.Enum.GetValues(typeof(EntityCategory)).Length;
 
         // Pathfinding filter toggle
         private bool filterByPathfinding = false;
@@ -348,9 +333,14 @@ namespace FFVI_ScreenReader.Core
 
         internal void CycleNextCategory()
         {
-            // Cycle to next category
-            int nextCategory = ((int)entityNavigator.CurrentCategory + 1) % CategoryCount;
-            EntityCategory newCategory = (EntityCategory)nextCategory;
+            // Get cycleable categories and find current index
+            var cycleableCategories = CategoryRegistry.GetCycleableCategories().ToList();
+            int currentIndex = cycleableCategories.IndexOf(entityNavigator.CurrentCategory);
+            if (currentIndex < 0) currentIndex = 0;
+
+            // Cycle to next
+            int nextIndex = (currentIndex + 1) % cycleableCategories.Count;
+            EntityCategory newCategory = cycleableCategories[nextIndex];
 
             // Update navigator category (automatically rebuilds list)
             entityNavigator.SetCategory(newCategory);
@@ -361,12 +351,15 @@ namespace FFVI_ScreenReader.Core
 
         internal void CyclePreviousCategory()
         {
-            // Cycle to previous category
-            int prevCategory = (int)entityNavigator.CurrentCategory - 1;
-            if (prevCategory < 0)
-                prevCategory = CategoryCount - 1;
+            // Get cycleable categories and find current index
+            var cycleableCategories = CategoryRegistry.GetCycleableCategories().ToList();
+            int currentIndex = cycleableCategories.IndexOf(entityNavigator.CurrentCategory);
+            if (currentIndex < 0) currentIndex = 0;
 
-            EntityCategory newCategory = (EntityCategory)prevCategory;
+            // Cycle to previous
+            int prevIndex = currentIndex - 1;
+            if (prevIndex < 0) prevIndex = cycleableCategories.Count - 1;
+            EntityCategory newCategory = cycleableCategories[prevIndex];
 
             // Update navigator category (automatically rebuilds list)
             entityNavigator.SetCategory(newCategory);
@@ -423,7 +416,7 @@ namespace FFVI_ScreenReader.Core
 
         private void AnnounceCategoryChange()
         {
-            string categoryName = EntityNavigator.GetCategoryName(entityNavigator.CurrentCategory);
+            string categoryName = CategoryRegistry.GetDisplayName(entityNavigator.CurrentCategory);
             int entityCount = entityNavigator.EntityCount;
 
             string announcement = $"Category: {categoryName}, {entityCount} {(entityCount == 1 ? "entity" : "entities")}";

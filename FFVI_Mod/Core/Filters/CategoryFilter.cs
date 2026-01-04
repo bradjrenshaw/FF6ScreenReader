@@ -46,10 +46,15 @@ namespace FFVI_ScreenReader.Core.Filters
 
         /// <summary>
         /// Checks if an entity matches the target category.
+        /// Only entities with interactive categories can pass this filter.
         /// </summary>
         public bool PassesFilter(NavigableEntity entity, FilterContext context)
         {
-            // "All" category accepts everything
+            // First, entity must be in an interactive category to be navigable
+            if (!CategoryRegistry.IsInteractive(entity.Category))
+                return false;
+
+            // "All" category accepts all interactive entities
             if (TargetCategory == EntityCategory.All)
                 return true;
 

@@ -433,7 +433,7 @@ namespace FFVI_ScreenReader.Field
     /// </summary>
     public class BarrierEntity : NavigableEntity
     {
-        public override EntityCategory Category => EntityCategory.Events;
+        public override EntityCategory Category => EntityCategory.Barriers;
 
         public override int Priority => 9;
 
