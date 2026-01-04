@@ -293,6 +293,12 @@ namespace FFVI_ScreenReader.Core
                     Patches.TimerHelper.AnnounceActiveTimers();
                 }
             }
+
+            // Hotkey: 4 to perform sonar scan
+            if (Input.GetKeyDown(KeyCode.Alpha4))
+            {
+                mod.PerformSonarScan();
+            }
         }
 
         /// <summary>

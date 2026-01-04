@@ -1,6 +1,7 @@
 using MelonLoader;
 using FFVI_ScreenReader.Utils;
 using FFVI_ScreenReader.Field;
+using FFVI_ScreenReader.Audio;
 using UnityEngine;
 using Il2Cpp;
 using Il2CppLast.Map;
@@ -34,6 +35,7 @@ namespace FFVI_ScreenReader.Core
         private EntityCache entityCache;
         private EntityNavigator entityNavigator;
         private MapViewer mapViewer;
+        private SonarSystem sonarSystem;
 
         // Entity scanning
         private const float ENTITY_SCAN_INTERVAL = 5f;
@@ -84,6 +86,9 @@ namespace FFVI_ScreenReader.Core
 
             // Initialize map viewer
             mapViewer = new MapViewer();
+
+            // Initialize sonar system
+            sonarSystem = new SonarSystem();
 
             // Initialize input manager
             inputManager = new InputManager(this);
@@ -737,6 +742,16 @@ namespace FFVI_ScreenReader.Core
                 LoggerInstance.Warning($"Error announcing airship status: {ex.Message}");
                 SpeakText("Error reading airship status");
             }
+        }
+
+        /// <summary>
+        /// Performs a sonar scan in all four cardinal directions and announces the results.
+        /// </summary>
+        internal void PerformSonarScan()
+        {
+            var results = sonarSystem.ScanCardinalDirections();
+            string announcement = sonarSystem.FormatScanResultsForSpeech(results);
+            SpeakText(announcement);
         }
 
         /// <summary>
