@@ -7,7 +7,12 @@
     <Version>1.0.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
 
   <!-- Platform-specific game directory paths -->
   <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
@@ -70,6 +75,10 @@
     </Reference>
     <Reference Include="UnityEngine.Physics2DModule">
       <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.AudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

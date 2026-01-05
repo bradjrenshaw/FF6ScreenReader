@@ -4,6 +4,7 @@ using UnityEngine;
 using Il2Cpp;
 using Il2CppLast.Entity.Field;
 using Il2CppLast.Map;
+using Il2CppLast.Message;
 using FFVI_ScreenReader.Core;
 using FFVI_ScreenReader.Utils;
 
@@ -79,13 +80,34 @@ namespace FFVI_ScreenReader.Audio
     /// <summary>
     /// Provides sonar-like detection of obstacles and entities around the player.
     /// Uses raycasting to detect blocking tiles in cardinal directions.
+    /// Supports continuous scanning with audio feedback.
     /// </summary>
     public class SonarSystem
     {
         /// <summary>
         /// Maximum range for wall detection in world units (16 units = 1 tile)
         /// </summary>
-        public float MaxRange { get; set; } = 96f; // 6 tiles
+        public float MaxRange { get; set; } = 48f; // 3 tiles
+
+        /// <summary>
+        /// Audio manager for playing sonar tones
+        /// </summary>
+        private SonarAudio sonarAudio;
+
+        /// <summary>
+        /// Whether continuous sonar mode is active
+        /// </summary>
+        public bool IsActive { get; private set; }
+
+        /// <summary>
+        /// Whether sonar scanning is temporarily paused (e.g., during map transitions)
+        /// </summary>
+        public bool IsPaused { get; private set; }
+
+        /// <summary>
+        /// Reference to entity cache (set when sonar is activated)
+        /// </summary>
+        private EntityCache activeEntityCache;
 
         /// <summary>
         /// Direction vectors for cardinal directions
@@ -97,6 +119,148 @@ namespace FFVI_ScreenReader.Audio
             { CardinalDirection.East, new Vector2(1, 0) },
             { CardinalDirection.West, new Vector2(-1, 0) }
         };
+
+        /// <summary>
+        /// Creates a new SonarSystem instance.
+        /// </summary>
+        public SonarSystem()
+        {
+            sonarAudio = new SonarAudio();
+        }
+
+        /// <summary>
+        /// Activates continuous sonar mode.
+        /// </summary>
+        /// <param name="entityCache">Entity cache for blocking checks</param>
+        public void Activate(EntityCache entityCache)
+        {
+            if (IsActive)
+                return;
+
+            activeEntityCache = entityCache;
+
+            // Initialize audio if not already done
+            if (!sonarAudio.IsInitialized)
+            {
+                sonarAudio.Initialize();
+            }
+
+            IsActive = true;
+        }
+
+        /// <summary>
+        /// Deactivates continuous sonar mode and stops all tones.
+        /// </summary>
+        public void Deactivate()
+        {
+            if (!IsActive)
+                return;
+
+            IsActive = false;
+            IsPaused = false;
+            sonarAudio.StopAll();
+            activeEntityCache = null;
+        }
+
+        /// <summary>
+        /// Temporarily pauses sonar scanning (e.g., during map transitions).
+        /// Stops all tones but keeps sonar in active state.
+        /// </summary>
+        public void Pause()
+        {
+            if (!IsActive || IsPaused)
+                return;
+
+            IsPaused = true;
+            sonarAudio.StopAll();
+        }
+
+        /// <summary>
+        /// Resumes sonar scanning after a pause.
+        /// </summary>
+        public void Resume()
+        {
+            if (!IsActive || !IsPaused)
+                return;
+
+            IsPaused = false;
+        }
+
+        /// <summary>
+        /// Toggles continuous sonar mode on/off.
+        /// </summary>
+        /// <param name="entityCache">Entity cache for blocking checks</param>
+        /// <returns>True if sonar is now active, false if deactivated</returns>
+        public bool Toggle(EntityCache entityCache)
+        {
+            if (IsActive)
+            {
+                Deactivate();
+                return false;
+            }
+            else
+            {
+                Activate(entityCache);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Updates the sonar system. Call this every frame when sonar is active.
+        /// Performs a scan and updates audio feedback.
+        /// </summary>
+        public void Update()
+        {
+            if (!IsActive || IsPaused || activeEntityCache == null)
+                return;
+
+            // Check if a message window is open (dialog/cutscene text)
+            try
+            {
+                var messageManager = MessageWindowManager.Instance;
+                if (messageManager != null && messageManager.IsOpen())
+                {
+                    // Stop all tones when message window is showing
+                    sonarAudio.StopAll();
+                    return;
+                }
+            }
+            catch
+            {
+                // Ignore errors accessing MessageWindowManager
+            }
+
+            // Check if field map is in a playable state (not during cutscenes/events)
+            try
+            {
+                var fieldMap = GameObjectCache.Get<FieldMap>();
+                if (fieldMap != null && !fieldMap.IsPlayable())
+                {
+                    // Stop all tones when not in playable state
+                    sonarAudio.StopAll();
+                    return;
+                }
+            }
+            catch
+            {
+                // Ignore errors accessing FieldMap
+            }
+
+            // Perform scan
+            var result = ScanCardinalDirections(activeEntityCache);
+
+            // Update audio based on scan results
+            sonarAudio.UpdateFromScanResult(result);
+        }
+
+        /// <summary>
+        /// Cleans up sonar resources.
+        /// </summary>
+        public void Cleanup()
+        {
+            Deactivate();
+            sonarAudio.Cleanup();
+        }
 
         /// <summary>
         /// Performs a sonar scan in all four cardinal directions from the player's position.

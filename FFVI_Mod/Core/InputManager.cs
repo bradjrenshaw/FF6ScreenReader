@@ -294,10 +294,10 @@ namespace FFVI_ScreenReader.Core
                 }
             }
 
-            // Hotkey: 4 to perform sonar scan
+            // Hotkey: 4 to toggle continuous sonar mode
             if (Input.GetKeyDown(KeyCode.Alpha4))
             {
-                mod.PerformSonarScan();
+                mod.ToggleSonarMode();
             }
 
             // Hotkey: 5 to debug colliders at cursor

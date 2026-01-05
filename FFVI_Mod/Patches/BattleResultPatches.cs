@@ -306,4 +306,25 @@ namespace FFVI_ScreenReader.Patches
             }
         }
     }
+
+    /// <summary>
+    /// Patch ResultMenuController.Close to detect when the result screen closes.
+    /// This is when we resume sonar scanning.
+    /// </summary>
+    [HarmonyPatch(typeof(ResultMenuController), nameof(ResultMenuController.Close))]
+    public static class ResultMenuController_Close_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            try
+            {
+                BattleStatePatches.NotifyBattleEnd();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Error in ResultMenuController.Close patch: {ex.Message}");
+            }
+        }
+    }
 }

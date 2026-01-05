@@ -24,8 +24,11 @@ echo Deploying to: %GAME_MODS_DIR%
 REM Create Mods directory if it doesn't exist
 if not exist "%GAME_MODS_DIR%" mkdir "%GAME_MODS_DIR%"
 
-REM Copy the DLL
+REM Copy the mod DLL
 copy "bin\Release\net6.0\FFVI_ScreenReader.dll" "%GAME_MODS_DIR%\"
+
+REM Copy NAudio dependencies
+copy "bin\Release\net6.0\NAudio*.dll" "%GAME_MODS_DIR%\"
 
 echo.
 echo Build and deployment complete!
