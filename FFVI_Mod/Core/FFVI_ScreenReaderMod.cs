@@ -489,13 +489,10 @@ namespace FFVI_ScreenReader.Core
 
         /// <summary>
         /// Toggles continuous sonar mode on/off.
-        /// When active, plays continuous tones for blocked directions.
         /// </summary>
         internal void ToggleSonarMode()
         {
-            bool isNowActive = sonarSystem.Toggle();
-            string status = isNowActive ? "Sonar on" : "Sonar off";
-            SpeakText(status);
+            sonarSystem.Toggle();
         }
 
         /// <summary>

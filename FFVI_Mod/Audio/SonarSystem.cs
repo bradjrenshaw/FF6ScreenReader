@@ -191,11 +191,14 @@ namespace FFVI_ScreenReader.Audio
 
         /// <summary>
         /// Toggles sonar mode on/off (user preference).
+        /// Announces the new state.
         /// </summary>
         /// <returns>True if sonar is now enabled, false if disabled</returns>
         public bool Toggle()
         {
             UserEnabled = !UserEnabled;
+            string status = UserEnabled ? "Sonar on" : "Sonar off";
+            FFVI_ScreenReaderMod.SpeakText(status);
             return UserEnabled;
         }
 
