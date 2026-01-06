@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 using FFVI_ScreenReader.Core.Filters;
 using Il2Cpp;
@@ -122,6 +123,11 @@ namespace FFVI_ScreenReader.Field
         public override int Priority => GetRepresentative()?.Priority ?? 0;
 
         public override bool BlocksPathing => GetRepresentative()?.BlocksPathing ?? false;
+
+        /// <summary>
+        /// SonarInfo delegates to the representative member's sonar info.
+        /// </summary>
+        public override SonarInfo SonarInfo => GetRepresentative()?.SonarInfo ?? SonarInfo.Silent();
 
         protected override string GetDisplayName()
         {

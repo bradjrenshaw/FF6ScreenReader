@@ -1,3 +1,4 @@
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 
 namespace FFVI_ScreenReader.Field
@@ -17,6 +18,8 @@ namespace FFVI_ScreenReader.Field
         public override int Priority => 10;
 
         public override bool BlocksPathing => false;
+
+        public override SonarInfo SonarInfo => SonarInfo.Continuous("vehicle.wav", 5f);
 
         protected override string GetDisplayName()
         {

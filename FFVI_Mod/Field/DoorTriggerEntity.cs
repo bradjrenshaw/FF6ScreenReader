@@ -1,3 +1,4 @@
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 
 namespace FFVI_ScreenReader.Field
@@ -12,6 +13,9 @@ namespace FFVI_ScreenReader.Field
         public override int Priority => 6;
 
         public override bool BlocksPathing => false;
+
+        // Silent - too many door triggers, would be noisy
+        public override SonarInfo SonarInfo => SonarInfo.Silent();
 
         protected override string GetDisplayName()
         {

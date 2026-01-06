@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Il2Cpp;
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 
 namespace FFVI_ScreenReader.Field
@@ -36,6 +37,8 @@ namespace FFVI_ScreenReader.Field
         public override int Priority => 4;
 
         public override bool BlocksPathing => true;
+
+        public override SonarInfo SonarInfo => SonarInfo.Continuous("npc.wav", 5f);
 
         /// <summary>
         /// Gets friendly character name from asset name.

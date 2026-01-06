@@ -891,6 +891,15 @@ namespace FFVI_ScreenReader.Core
         }
 
         /// <summary>
+        /// Plays a test exit.wav sound for debugging entity sonar.
+        /// </summary>
+        internal void PlayTestExitSound()
+        {
+            SpeakText("Playing exit sound");
+            sonarSystem.PlayTestSound("exit.wav");
+        }
+
+        /// <summary>
         /// Speak text through the screen reader.
         /// Thread-safe: TolkWrapper uses locking to prevent concurrent native calls.
         /// </summary>

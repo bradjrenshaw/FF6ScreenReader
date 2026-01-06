@@ -1,3 +1,4 @@
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 
 namespace FFVI_ScreenReader.Field
@@ -13,6 +14,8 @@ namespace FFVI_ScreenReader.Field
         public override int Priority => 9;
 
         public override bool BlocksPathing => true;
+
+        public override SonarInfo SonarInfo => SonarInfo.Blocking();
 
         protected override string GetDisplayName()
         {

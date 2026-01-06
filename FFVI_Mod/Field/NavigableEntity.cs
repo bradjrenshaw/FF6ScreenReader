@@ -1,5 +1,6 @@
 using Il2CppLast.Entity.Field;
 using UnityEngine;
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 using static FFVI_ScreenReader.Utils.DirectionHelper;
 
@@ -45,6 +46,12 @@ namespace FFVI_ScreenReader.Field
         /// Whether this entity is currently interactive
         /// </summary>
         public virtual bool IsInteractive => true;
+
+        /// <summary>
+        /// Sonar audio configuration for this entity type.
+        /// Determines how the entity is represented in the sonar system.
+        /// </summary>
+        public virtual SonarInfo SonarInfo => SonarInfo.Silent();
 
         /// <summary>
         /// Gets the display name for this entity (without distance/direction)

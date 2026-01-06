@@ -305,6 +305,12 @@ namespace FFVI_ScreenReader.Core
             {
                 mod.DebugCollidersAtCursor();
             }
+
+            // Hotkey: 6 to play test exit sound
+            if (Input.GetKeyDown(KeyCode.Alpha6))
+            {
+                mod.PlayTestExitSound();
+            }
         }
 
         /// <summary>

@@ -1,5 +1,6 @@
 using Il2Cpp;
 using Il2CppLast.Entity.Field;
+using FFVI_ScreenReader.Audio;
 using FFVI_ScreenReader.Core;
 
 namespace FFVI_ScreenReader.Field
@@ -24,6 +25,13 @@ namespace FFVI_ScreenReader.Field
         /// Opened chests are not interactive
         /// </summary>
         public override bool IsInteractive => !IsOpened;
+
+        /// <summary>
+        /// Opened chests are silent, unopened chests play sound
+        /// </summary>
+        public override SonarInfo SonarInfo => IsOpened
+            ? SonarInfo.Silent()
+            : SonarInfo.Continuous("chest.wav", 5f);
 
         protected override string GetDisplayName()
         {

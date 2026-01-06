@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Il2Cpp;
 using Il2CppLast.Entity.Field;
 using Il2CppLast.Map;
 using Il2CppLast.Message;
+using MelonLoader;
 using FFVI_ScreenReader.Core;
+using FFVI_ScreenReader.Field;
 using FFVI_ScreenReader.Utils;
 
 namespace FFVI_ScreenReader.Audio
@@ -108,6 +111,11 @@ namespace FFVI_ScreenReader.Audio
         /// Reference to entity cache (set when sonar is activated)
         /// </summary>
         private EntityCache activeEntityCache;
+
+        /// <summary>
+        /// Debug: tracks last logged entity count to avoid spam
+        /// </summary>
+        private int lastLoggedEntityCount = -1;
 
         /// <summary>
         /// Direction vectors for cardinal directions
@@ -246,11 +254,75 @@ namespace FFVI_ScreenReader.Audio
                 // Ignore errors accessing FieldMap
             }
 
-            // Perform scan
+            // Perform wall scan
             var result = ScanCardinalDirections(activeEntityCache);
 
-            // Update audio based on scan results
+            // Update wall audio based on scan results
             sonarAudio.UpdateFromScanResult(result);
+
+            // Update entity sounds
+            UpdateEntitySounds();
+        }
+
+        /// <summary>
+        /// Updates entity sounds based on position relative to player.
+        /// </summary>
+        private void UpdateEntitySounds()
+        {
+            var playerController = GameObjectCache.Get<FieldPlayerController>();
+            if (playerController?.fieldPlayer == null)
+                return;
+
+            Vector3 playerPos = playerController.fieldPlayer.transform.position;
+
+            sonarAudio.BeginEntityUpdate();
+
+            // Get unique entities (avoid duplicates from grouped entities)
+            var uniqueEntities = activeEntityCache.Entities.Values.Distinct().ToList();
+
+            // Debug: log entity types periodically when count changes
+            if (uniqueEntities.Count != lastLoggedEntityCount)
+            {
+                lastLoggedEntityCount = uniqueEntities.Count;
+                var typeCounts = uniqueEntities
+                    .GroupBy(e => e.GetType().Name)
+                    .Select(g => $"{g.Key}:{g.Count()}")
+                    .ToList();
+                var sonarCounts = uniqueEntities
+                    .GroupBy(e => e.SonarInfo?.Mode.ToString() ?? "null")
+                    .Select(g => $"{g.Key}:{g.Count()}")
+                    .ToList();
+                MelonLogger.Msg($"[SonarSystem] Entities: {uniqueEntities.Count} - Types: {string.Join(", ", typeCounts)} - Sonar: {string.Join(", ", sonarCounts)}");
+            }
+
+            foreach (var entity in uniqueEntities)
+            {
+                var sonarInfo = entity.SonarInfo;
+                if (sonarInfo == null || sonarInfo.Mode == SonarMode.Silent)
+                    continue;
+
+                // BlockingTerrain entities are handled by wall raycasting
+                if (sonarInfo.Mode == SonarMode.BlockingTerrain)
+                    continue;
+
+                // Continuous mode - play the entity's sound file
+                if (sonarInfo.Mode == SonarMode.Continuous && !string.IsNullOrEmpty(sonarInfo.Sound))
+                {
+                    // Get entity position (use world position, same as player)
+                    Vector3 entityPos = entity.Position;
+
+                    // Calculate relative position (from player to entity)
+                    float relativeX = entityPos.x - playerPos.x;  // Positive = East
+                    float relativeY = entityPos.y - playerPos.y;  // Positive = North
+
+                    // Use entity's unique ID (hashcode of game entity)
+                    string entityId = entity.GetHashCode().ToString();
+
+                    sonarAudio.UpdateEntitySound(entityId, sonarInfo.Sound, relativeX, relativeY, sonarInfo.MaxRange);
+                }
+            }
+
+            sonarAudio.EndEntityUpdate();
         }
 
         /// <summary>
@@ -260,6 +332,19 @@ namespace FFVI_ScreenReader.Audio
         {
             Deactivate();
             sonarAudio.Cleanup();
+        }
+
+        /// <summary>
+        /// Plays a test sound file for debugging.
+        /// </summary>
+        public void PlayTestSound(string soundFile)
+        {
+            // Initialize audio if not already done
+            if (!sonarAudio.IsInitialized)
+            {
+                sonarAudio.Initialize();
+            }
+            sonarAudio.PlayTestSound(soundFile);
         }
 
         /// <summary>
