@@ -123,38 +123,7 @@ namespace FFVI_ScreenReader.Core
         /// </summary>
         private void HandleGlobalInput()
         {
-            bool ctrlHeld = IsCtrlHeld();
             bool shiftHeld = IsShiftHeld();
-
-            // Ctrl+I/K/J/L/O: Map viewer controls
-            if (ctrlHeld)
-            {
-                if (Input.GetKeyDown(KeyCode.I))
-                {
-                    mod.MapViewerMove(new Vector2(0, 16)); // North
-                    return;
-                }
-                if (Input.GetKeyDown(KeyCode.K))
-                {
-                    mod.MapViewerMove(new Vector2(0, -16)); // South
-                    return;
-                }
-                if (Input.GetKeyDown(KeyCode.J))
-                {
-                    mod.MapViewerMove(new Vector2(-16, 0)); // West
-                    return;
-                }
-                if (Input.GetKeyDown(KeyCode.L))
-                {
-                    mod.MapViewerMove(new Vector2(16, 0)); // East
-                    return;
-                }
-                if (Input.GetKeyDown(KeyCode.O))
-                {
-                    mod.MapViewerSnapToPlayer();
-                    return;
-                }
-            }
 
             // H: Announce airship heading or character health
             if (Input.GetKeyDown(KeyCode.H))

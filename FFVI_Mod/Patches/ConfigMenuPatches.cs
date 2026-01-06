@@ -44,6 +44,12 @@ namespace FFVI_ScreenReader.Patches
                     return;
                 }
 
+                // Only announce when the config menu is actually visible
+                if (view.gameObject == null || !view.gameObject.activeInHierarchy)
+                {
+                    return;
+                }
+
                 // Get the name text (localized)
                 var nameText = view.nameText;
                 if (nameText == null || string.IsNullOrWhiteSpace(nameText.text))

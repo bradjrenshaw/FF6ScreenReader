@@ -22,9 +22,9 @@ namespace FFVI_ScreenReader.Core
         private static TolkWrapper tolk;
         private InputManager inputManager;
         private EntityCache entityCache;
-        private MapViewer mapViewer;
         private SonarSystem sonarSystem;
         private EntityNavigationSystem entityNavigationSystem;
+        private MapViewerSystem mapViewerSystem;
         private SystemManager systemManager;
 
         // Entity scanning
@@ -47,11 +47,12 @@ namespace FFVI_ScreenReader.Core
             // Initialize entity cache
             entityCache = new EntityCache(ENTITY_SCAN_INTERVAL);
 
-            // Initialize map viewer
-            mapViewer = new MapViewer();
-
             // Initialize system manager
             systemManager = new SystemManager();
+
+            // Initialize map viewer system (depends on entityCache)
+            mapViewerSystem = new MapViewerSystem(entityCache);
+            systemManager.Register(mapViewerSystem);
 
             // Initialize entity navigation system (depends on entityCache)
             entityNavigationSystem = new EntityNavigationSystem(entityCache);
@@ -185,12 +186,8 @@ namespace FFVI_ScreenReader.Core
                         SpeakText($"Entering {mapName}", interrupt: false);
                         lastAnnouncedMapId = currentMapId;
 
-                        // Reset map viewer cursor on map transition
-                        var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
-                        if (playerController?.fieldPlayer != null)
-                        {
-                            mapViewer.SnapToPlayer(playerController.fieldPlayer.transform.localPosition);
-                        }
+                        // Reset map viewer cursor on map transition (silent)
+                        mapViewerSystem?.SnapToPlayer(announce: false);
 
                         // Delay entity scan to allow new map to fully initialize
                         CoroutineManager.StartManaged(DelayedMapTransitionScan());
@@ -206,48 +203,6 @@ namespace FFVI_ScreenReader.Core
             {
                 LoggerInstance.Warning($"Error detecting map transition: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Moves the map viewer cursor in the specified direction and announces tile contents.
-        /// </summary>
-        internal void MapViewerMove(Vector2 offset)
-        {
-            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
-            if (playerController?.fieldPlayer == null)
-            {
-                SpeakText("Not in field");
-                return;
-            }
-
-            Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
-
-            // Initialize cursor to player position if first use
-            if (!mapViewer.IsActive)
-            {
-                mapViewer.SnapToPlayer(playerPos);
-            }
-
-            mapViewer.MoveCursor(offset);
-            string description = mapViewer.DescribeTileAtCursor(entityCache);
-            SpeakText(description);
-        }
-
-        /// <summary>
-        /// Snaps the map viewer cursor back to the player's position.
-        /// </summary>
-        internal void MapViewerSnapToPlayer()
-        {
-            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
-            if (playerController?.fieldPlayer == null)
-            {
-                SpeakText("Not in field");
-                return;
-            }
-
-            Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
-            mapViewer.SnapToPlayer(playerPos);
-            SpeakText("Cursor reset to player");
         }
 
         private void AnnounceCurrentCharacterStatus()
@@ -493,11 +448,7 @@ namespace FFVI_ScreenReader.Core
                 return;
             }
 
-            Vector3 cursorPos = mapViewer.CursorPosition;
-            if (!mapViewer.IsActive)
-            {
-                cursorPos = playerController.fieldPlayer.transform.localPosition;
-            }
+            Vector3 cursorPos = mapViewerSystem?.GetEffectiveCursorPosition() ?? playerController.fieldPlayer.transform.localPosition;
 
             int playerLayer = playerController.fieldPlayer.gameObject.layer;
             Vector2 point = new Vector2(cursorPos.x, cursorPos.y);
