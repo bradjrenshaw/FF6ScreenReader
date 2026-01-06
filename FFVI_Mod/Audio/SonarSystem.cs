@@ -425,8 +425,17 @@ namespace FFVI_ScreenReader.Audio
             if (collider == null || collider.gameObject == null)
                 return false;
 
+            // Skip disabled Unity colliders
+            if (!collider.enabled)
+                return false;
+
             // Skip player
             if (collider.gameObject.name.Contains("Player"))
+                return false;
+
+            // Check the game's internal enable flag on FieldColliderEntity
+            // The game may have disabled the collision logic even if the Unity collider is still enabled
+            if (!IsFieldColliderEnabled(collider.gameObject))
                 return false;
 
             // Check for matching entity in cache
@@ -440,6 +449,40 @@ namespace FFVI_ScreenReader.Audio
 
             // No matched entity - assume blocking
             return true;
+        }
+
+        /// <summary>
+        /// Checks if the game's internal FieldColliderEntity enable flag is true.
+        /// Returns true if no FieldColliderEntity is found (default to enabled).
+        /// </summary>
+        private bool IsFieldColliderEnabled(GameObject gameObject)
+        {
+            try
+            {
+                // Try to get FieldColliderEntity from the GameObject or its parent
+                var colliderEntity = gameObject.GetComponent<FieldColliderEntity>();
+                if (colliderEntity == null)
+                    colliderEntity = gameObject.GetComponentInParent<FieldColliderEntity>();
+
+                if (colliderEntity == null)
+                    return true; // No FieldColliderEntity, assume enabled
+
+                // Access the private 'enable' field via reflection
+                var il2cppType = colliderEntity.GetIl2CppType();
+                var bindingFlags = Il2CppSystem.Reflection.BindingFlags.NonPublic |
+                                   Il2CppSystem.Reflection.BindingFlags.Instance;
+                var enableField = il2cppType.GetField("enable", bindingFlags);
+
+                if (enableField == null)
+                    return true; // Field not found, assume enabled
+
+                return enableField.GetValue(colliderEntity).Unbox<bool>();
+            }
+            catch
+            {
+                // On any error, assume enabled
+                return true;
+            }
         }
 
         /// <summary>
