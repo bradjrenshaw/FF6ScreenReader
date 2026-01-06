@@ -3,6 +3,7 @@ using MelonLoader;
 using FFVI_ScreenReader.Utils;
 using FFVI_ScreenReader.Field;
 using FFVI_ScreenReader.Audio;
+using FFVI_ScreenReader.Core.Systems;
 using UnityEngine;
 using Il2Cpp;
 using Il2CppLast.Map;
@@ -24,6 +25,7 @@ namespace FFVI_ScreenReader.Core
         private EntityNavigator entityNavigator;
         private MapViewer mapViewer;
         private SonarSystem sonarSystem;
+        private SystemManager systemManager;
 
         // Entity scanning
         private const float ENTITY_SCAN_INTERVAL = 5f;
@@ -72,12 +74,12 @@ namespace FFVI_ScreenReader.Core
             // Initialize map viewer
             mapViewer = new MapViewer();
 
-            // Initialize sonar system
-            sonarSystem = new SonarSystem();
+            // Initialize system manager
+            systemManager = new SystemManager();
 
-            // Subscribe to battle state events to pause sonar during combat
-            Patches.BattleStatePatches.OnBattleStart += OnBattleStart;
-            Patches.BattleStatePatches.OnBattleEnd += OnBattleEnd;
+            // Initialize sonar system (depends on entityCache)
+            sonarSystem = new SonarSystem(entityCache);
+            systemManager.Register(sonarSystem);
 
             // Initialize input manager
             inputManager = new InputManager(this);
@@ -88,29 +90,10 @@ namespace FFVI_ScreenReader.Core
             // Unsubscribe from scene load events
             UnityEngine.SceneManagement.SceneManager.sceneLoaded -= (UnityEngine.Events.UnityAction<UnityEngine.SceneManagement.Scene, UnityEngine.SceneManagement.LoadSceneMode>)OnSceneLoaded;
 
-            // Unsubscribe from battle state events
-            Patches.BattleStatePatches.OnBattleStart -= OnBattleStart;
-            Patches.BattleStatePatches.OnBattleEnd -= OnBattleEnd;
-
             CoroutineManager.CleanupAll();
+            systemManager?.Shutdown();
             sonarSystem?.Cleanup();
             tolk?.Unload();
-        }
-
-        /// <summary>
-        /// Called when battle starts. Pauses sonar scanning.
-        /// </summary>
-        private void OnBattleStart()
-        {
-            sonarSystem.Pause();
-        }
-
-        /// <summary>
-        /// Called when battle ends. Resumes sonar scanning.
-        /// </summary>
-        private void OnBattleEnd()
-        {
-            sonarSystem.Resume();
         }
 
         /// <summary>
@@ -122,6 +105,9 @@ namespace FFVI_ScreenReader.Core
             try
             {
                 LoggerInstance.Msg($"[ComponentCache] Scene loaded: {scene.name}");
+
+                // Notify all systems of scene change
+                systemManager?.OnSceneChanged(scene.name);
 
                 // Try to find and cache FieldPlayerController
                 var playerController = UnityEngine.Object.FindObjectOfType<Il2CppLast.Map.FieldPlayerController>();
@@ -183,9 +169,6 @@ namespace FFVI_ScreenReader.Core
             // No need to call RebuildNavigationList() as the event handlers already filter and add entities
             entityCache.ForceScan();
 
-            // Resume sonar after map transition is complete
-            sonarSystem.Resume();
-
             LoggerInstance.Msg("[ComponentCache] Delayed map transition entity scan completed");
         }
 
@@ -194,8 +177,8 @@ namespace FFVI_ScreenReader.Core
             // Update entity cache (handles periodic rescanning)
             entityCache.Update();
 
-            // Update sonar system (continuous scanning when active)
-            sonarSystem.Update();
+            // Update all managed systems (handles activation/deactivation and updates)
+            systemManager.Update();
 
             // Check for map transitions
             CheckMapTransition();
@@ -221,9 +204,6 @@ namespace FFVI_ScreenReader.Core
                         string mapName = Field.MapNameResolver.GetCurrentMapName();
                         SpeakText($"Entering {mapName}", interrupt: false);
                         lastAnnouncedMapId = currentMapId;
-
-                        // Pause sonar during map transition to prevent lag
-                        sonarSystem.Pause();
 
                         // Reset map viewer cursor on map transition
                         var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
@@ -885,7 +865,7 @@ namespace FFVI_ScreenReader.Core
         /// </summary>
         internal void ToggleSonarMode()
         {
-            bool isNowActive = sonarSystem.Toggle(entityCache);
+            bool isNowActive = sonarSystem.Toggle();
             string status = isNowActive ? "Sonar on" : "Sonar off";
             SpeakText(status);
         }

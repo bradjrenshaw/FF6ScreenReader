@@ -8,6 +8,7 @@ using Il2CppLast.Map;
 using Il2CppLast.Message;
 using MelonLoader;
 using FFVI_ScreenReader.Core;
+using FFVI_ScreenReader.Core.Systems;
 using FFVI_ScreenReader.Field;
 using FFVI_ScreenReader.Utils;
 
@@ -84,9 +85,24 @@ namespace FFVI_ScreenReader.Audio
     /// Provides sonar-like detection of obstacles and entities around the player.
     /// Uses raycasting to detect blocking tiles in cardinal directions.
     /// Supports continuous scanning with audio feedback.
+    /// Implements ISystem for lifecycle management.
     /// </summary>
-    public class SonarSystem
+    public class SonarSystem : ISystem
     {
+        // ISystem implementation
+        public string Name => "Sonar";
+        public int Priority => 100; // Run after entity systems
+
+        /// <summary>
+        /// Whether the user has enabled sonar mode (hotkey toggle).
+        /// </summary>
+        public bool UserEnabled { get; private set; }
+
+        /// <summary>
+        /// System is active when user has enabled it AND we're on a field map.
+        /// </summary>
+        public bool IsActive => UserEnabled && IsOnFieldMap();
+
         /// <summary>
         /// Maximum range for wall detection in world units (16 units = 1 tile)
         /// </summary>
@@ -98,24 +114,19 @@ namespace FFVI_ScreenReader.Audio
         private SonarAudio sonarAudio;
 
         /// <summary>
-        /// Whether continuous sonar mode is active
+        /// Reference to entity cache for blocking checks
         /// </summary>
-        public bool IsActive { get; private set; }
-
-        /// <summary>
-        /// Whether sonar scanning is temporarily paused (e.g., during map transitions)
-        /// </summary>
-        public bool IsPaused { get; private set; }
-
-        /// <summary>
-        /// Reference to entity cache (set when sonar is activated)
-        /// </summary>
-        private EntityCache activeEntityCache;
+        private EntityCache entityCache;
 
         /// <summary>
         /// Debug: tracks last logged entity count to avoid spam
         /// </summary>
         private int lastLoggedEntityCount = -1;
+
+        /// <summary>
+        /// Current scene name
+        /// </summary>
+        private string currentScene = "";
 
         /// <summary>
         /// Direction vectors for cardinal directions
@@ -131,131 +142,109 @@ namespace FFVI_ScreenReader.Audio
         /// <summary>
         /// Creates a new SonarSystem instance.
         /// </summary>
-        public SonarSystem()
+        public SonarSystem(EntityCache entityCache)
         {
+            this.entityCache = entityCache;
             sonarAudio = new SonarAudio();
         }
 
         /// <summary>
-        /// Activates continuous sonar mode.
+        /// Checks if we're currently on a field map.
         /// </summary>
-        /// <param name="entityCache">Entity cache for blocking checks</param>
-        public void Activate(EntityCache entityCache)
+        private bool IsOnFieldMap()
         {
-            if (IsActive)
-                return;
-
-            activeEntityCache = entityCache;
-
-            // Initialize audio if not already done
-            if (!sonarAudio.IsInitialized)
-            {
-                sonarAudio.Initialize();
-            }
-
-            IsActive = true;
-        }
-
-        /// <summary>
-        /// Deactivates continuous sonar mode and stops all tones.
-        /// </summary>
-        public void Deactivate()
-        {
-            if (!IsActive)
-                return;
-
-            IsActive = false;
-            IsPaused = false;
-            sonarAudio.StopAll();
-            activeEntityCache = null;
-        }
-
-        /// <summary>
-        /// Temporarily pauses sonar scanning (e.g., during map transitions).
-        /// Stops all tones but keeps sonar in active state.
-        /// </summary>
-        public void Pause()
-        {
-            if (!IsActive || IsPaused)
-                return;
-
-            IsPaused = true;
-            sonarAudio.StopAll();
-        }
-
-        /// <summary>
-        /// Resumes sonar scanning after a pause.
-        /// </summary>
-        public void Resume()
-        {
-            if (!IsActive || !IsPaused)
-                return;
-
-            IsPaused = false;
-        }
-
-        /// <summary>
-        /// Toggles continuous sonar mode on/off.
-        /// </summary>
-        /// <param name="entityCache">Entity cache for blocking checks</param>
-        /// <returns>True if sonar is now active, false if deactivated</returns>
-        public bool Toggle(EntityCache entityCache)
-        {
-            if (IsActive)
-            {
-                Deactivate();
+            // Check if scene looks like a field map
+            if (string.IsNullOrEmpty(currentScene))
                 return false;
-            }
-            else
-            {
-                Activate(entityCache);
-                return true;
-            }
+
+            // Field scenes typically start with "field" or similar
+            // Also check for player controller availability
+            var playerController = GameObjectCache.Get<FieldPlayerController>();
+            return playerController?.fieldPlayer != null;
         }
 
         /// <summary>
-        /// Updates the sonar system. Call this every frame when sonar is active.
-        /// Performs a scan and updates audio feedback.
+        /// Checks if audio should be temporarily muted (dialogs, cutscenes).
         /// </summary>
-        public void Update()
+        private bool ShouldMuteAudio()
         {
-            if (!IsActive || IsPaused || activeEntityCache == null)
-                return;
-
             // Check if a message window is open (dialog/cutscene text)
             try
             {
                 var messageManager = MessageWindowManager.Instance;
                 if (messageManager != null && messageManager.IsOpen())
-                {
-                    // Stop all tones when message window is showing
-                    sonarAudio.StopAll();
-                    return;
-                }
+                    return true;
             }
-            catch
-            {
-                // Ignore errors accessing MessageWindowManager
-            }
+            catch { }
 
             // Check if field map is in a playable state (not during cutscenes/events)
             try
             {
                 var fieldMap = GameObjectCache.Get<FieldMap>();
                 if (fieldMap != null && !fieldMap.IsPlayable())
-                {
-                    // Stop all tones when not in playable state
-                    sonarAudio.StopAll();
-                    return;
-                }
+                    return true;
             }
-            catch
+            catch { }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Toggles sonar mode on/off (user preference).
+        /// </summary>
+        /// <returns>True if sonar is now enabled, false if disabled</returns>
+        public bool Toggle()
+        {
+            UserEnabled = !UserEnabled;
+            return UserEnabled;
+        }
+
+        /// <summary>
+        /// Called when the system becomes active.
+        /// </summary>
+        public void OnActivate()
+        {
+            MelonLogger.Msg("[SonarSystem] Activating");
+
+            // Initialize audio if not already done
+            if (!sonarAudio.IsInitialized)
             {
-                // Ignore errors accessing FieldMap
+                sonarAudio.Initialize();
+            }
+        }
+
+        /// <summary>
+        /// Called when the system becomes inactive.
+        /// </summary>
+        public void OnDeactivate()
+        {
+            MelonLogger.Msg("[SonarSystem] Deactivating");
+            sonarAudio.StopAll();
+        }
+
+        /// <summary>
+        /// Called when the scene changes.
+        /// </summary>
+        public void OnSceneChanged(string sceneName)
+        {
+            currentScene = sceneName;
+            // Audio will be stopped by OnDeactivate if we leave a field map
+        }
+
+        /// <summary>
+        /// Updates the sonar system each frame.
+        /// </summary>
+        public void Update()
+        {
+            // Check for temporary muting (dialogs, cutscenes)
+            if (ShouldMuteAudio())
+            {
+                sonarAudio.StopAll();
+                return;
             }
 
             // Perform wall scan
-            var result = ScanCardinalDirections(activeEntityCache);
+            var result = ScanCardinalDirections();
 
             // Update wall audio based on scan results
             sonarAudio.UpdateFromScanResult(result);
@@ -278,7 +267,7 @@ namespace FFVI_ScreenReader.Audio
             sonarAudio.BeginEntityUpdate();
 
             // Get unique entities (avoid duplicates from grouped entities)
-            var uniqueEntities = activeEntityCache.Entities.Values.Distinct().ToList();
+            var uniqueEntities = entityCache.Entities.Values.Distinct().ToList();
 
             // Debug: log entity types periodically when count changes
             if (uniqueEntities.Count != lastLoggedEntityCount)
@@ -330,7 +319,7 @@ namespace FFVI_ScreenReader.Audio
         /// </summary>
         public void Cleanup()
         {
-            Deactivate();
+            UserEnabled = false;
             sonarAudio.Cleanup();
         }
 
@@ -350,9 +339,8 @@ namespace FFVI_ScreenReader.Audio
         /// <summary>
         /// Performs a sonar scan in all four cardinal directions from the player's position.
         /// </summary>
-        /// <param name="entityCache">Entity cache to check for blocking entities</param>
         /// <returns>Scan results for all directions, or null if player not available</returns>
-        public SonarScanResult ScanCardinalDirections(EntityCache entityCache)
+        public SonarScanResult ScanCardinalDirections()
         {
             var playerController = GameObjectCache.Get<FieldPlayerController>();
             if (playerController?.fieldPlayer == null)
@@ -363,17 +351,17 @@ namespace FFVI_ScreenReader.Audio
 
             return new SonarScanResult
             {
-                North = ScanDirection(playerPos, CardinalDirection.North, playerLayer, entityCache),
-                South = ScanDirection(playerPos, CardinalDirection.South, playerLayer, entityCache),
-                East = ScanDirection(playerPos, CardinalDirection.East, playerLayer, entityCache),
-                West = ScanDirection(playerPos, CardinalDirection.West, playerLayer, entityCache)
+                North = ScanDirection(playerPos, CardinalDirection.North, playerLayer),
+                South = ScanDirection(playerPos, CardinalDirection.South, playerLayer),
+                East = ScanDirection(playerPos, CardinalDirection.East, playerLayer),
+                West = ScanDirection(playerPos, CardinalDirection.West, playerLayer)
             };
         }
 
         /// <summary>
         /// Scans in a single direction for blocking obstacles.
         /// </summary>
-        private SonarHit ScanDirection(Vector3 origin, CardinalDirection direction, int playerLayer, EntityCache entityCache)
+        private SonarHit ScanDirection(Vector3 origin, CardinalDirection direction, int playerLayer)
         {
             var hit = new SonarHit
             {
@@ -397,7 +385,7 @@ namespace FFVI_ScreenReader.Audio
 
             foreach (var rayHit in rayHits)
             {
-                if (rayHit.collider != null && IsBlockingCollider(rayHit.collider, entityCache))
+                if (rayHit.collider != null && IsBlockingCollider(rayHit.collider))
                 {
                     if (rayHit.distance < closestDistance)
                     {
@@ -420,7 +408,7 @@ namespace FFVI_ScreenReader.Audio
         /// <summary>
         /// Checks if a collider is a blocking obstacle.
         /// </summary>
-        private bool IsBlockingCollider(Collider2D collider, EntityCache entityCache)
+        private bool IsBlockingCollider(Collider2D collider)
         {
             if (collider == null || collider.gameObject == null)
                 return false;
