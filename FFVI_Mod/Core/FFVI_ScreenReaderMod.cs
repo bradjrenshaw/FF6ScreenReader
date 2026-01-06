@@ -22,27 +22,16 @@ namespace FFVI_ScreenReader.Core
         private static TolkWrapper tolk;
         private InputManager inputManager;
         private EntityCache entityCache;
-        private EntityNavigator entityNavigator;
         private MapViewer mapViewer;
         private SonarSystem sonarSystem;
+        private EntityNavigationSystem entityNavigationSystem;
         private SystemManager systemManager;
 
         // Entity scanning
         private const float ENTITY_SCAN_INTERVAL = 5f;
 
-        // Pathfinding filter toggle
-        private bool filterByPathfinding = false;
-
-        // Map exit filter toggle
-        private bool filterMapExits = false;
-
         // Map transition tracking
         private int lastAnnouncedMapId = -1;
-
-        // Preferences
-        private static MelonPreferences_Category prefsCategory;
-        private static MelonPreferences_Entry<bool> prefPathfindingFilter;
-        private static MelonPreferences_Entry<bool> prefMapExitFilter;
 
         public override void OnInitializeMelon()
         {
@@ -51,25 +40,12 @@ namespace FFVI_ScreenReader.Core
             // Subscribe to scene load events for automatic component caching
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (UnityEngine.Events.UnityAction<UnityEngine.SceneManagement.Scene, UnityEngine.SceneManagement.LoadSceneMode>)OnSceneLoaded;
 
-            // Initialize preferences
-            prefsCategory = MelonPreferences.CreateCategory("FFVI_ScreenReader");
-            prefPathfindingFilter = prefsCategory.CreateEntry<bool>("PathfindingFilter", false, "Pathfinding Filter", "Only show entities with valid paths when cycling");
-            prefMapExitFilter = prefsCategory.CreateEntry<bool>("MapExitFilter", false, "Map Exit Filter", "Filter multiple map exits to the same destination, showing only the closest one");
-
-            // Load saved preferences
-            filterByPathfinding = prefPathfindingFilter.Value;
-            filterMapExits = prefMapExitFilter.Value;
-
             // Initialize Tolk for screen reader support
             tolk = new TolkWrapper();
             tolk.Load();
 
-            // Initialize entity cache and navigator
+            // Initialize entity cache
             entityCache = new EntityCache(ENTITY_SCAN_INTERVAL);
-
-            entityNavigator = new EntityNavigator(entityCache);
-            entityNavigator.FilterByPathfinding = filterByPathfinding;
-            entityNavigator.FilterMapExits = filterMapExits;
 
             // Initialize map viewer
             mapViewer = new MapViewer();
@@ -77,12 +53,16 @@ namespace FFVI_ScreenReader.Core
             // Initialize system manager
             systemManager = new SystemManager();
 
+            // Initialize entity navigation system (depends on entityCache)
+            entityNavigationSystem = new EntityNavigationSystem(entityCache);
+            systemManager.Register(entityNavigationSystem);
+
             // Initialize sonar system (depends on entityCache)
             sonarSystem = new SonarSystem(entityCache);
             systemManager.Register(sonarSystem);
 
-            // Initialize input manager
-            inputManager = new InputManager(this);
+            // Initialize input manager (depends on systemManager)
+            inputManager = new InputManager(this, systemManager);
         }
 
         public override void OnDeinitializeMelon()
@@ -228,247 +208,6 @@ namespace FFVI_ScreenReader.Core
             }
         }
 
-        internal void AnnounceCurrentEntity()
-        {
-            var entity = entityNavigator.CurrentEntity;
-            if (entity == null)
-            {
-                SpeakText("No entities nearby");
-                return;
-            }
-
-            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
-            if (playerController?.fieldPlayer == null)
-            {
-                SpeakText("Not in field");
-                return;
-            }
-
-            // CRITICAL: Touch controller uses localPosition, NOT position!
-            Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
-            Vector3 targetPos = entity.GameEntity.transform.localPosition;
-
-            var pathInfo = Field.FieldNavigationHelper.FindPathTo(
-                playerPos,
-                targetPos,
-                playerController.mapHandle,
-                playerController.fieldPlayer
-            );
-
-            string announcement;
-            if (pathInfo.Success)
-            {
-                // Just announce the path - user knows what entity they're navigating to from cycling
-                announcement = $"{pathInfo.Description}";
-            }
-            else
-            {
-                announcement = "no path";
-            }
-
-            SpeakText(announcement);
-        }
-
-        internal void CycleNext()
-        {
-            if (entityNavigator.CycleNext())
-            {
-                AnnounceEntityOnly();
-            }
-            else
-            {
-                // Either no entities or no pathable entities found
-                if (entityNavigator.EntityCount == 0)
-                {
-                    SpeakText("No entities nearby");
-                }
-                else
-                {
-                    SpeakText("No pathable entities found");
-                }
-            }
-        }
-
-        internal void CyclePrevious()
-        {
-            if (entityNavigator.CyclePrevious())
-            {
-                AnnounceEntityOnly();
-            }
-            else
-            {
-                // Either no entities or no pathable entities found
-                if (entityNavigator.EntityCount == 0)
-                {
-                    SpeakText("No entities nearby");
-                }
-                else
-                {
-                    SpeakText("No pathable entities found");
-                }
-            }
-        }
-
-        internal void AnnounceEntityOnly()
-        {
-            var entity = entityNavigator.CurrentEntity;
-            if (entity == null)
-            {
-                SpeakText("No entities nearby");
-                return;
-            }
-
-            var playerController = Utils.GameObjectCache.Get<FieldPlayerController>();
-            if (playerController?.fieldPlayer == null)
-            {
-                SpeakText("Not in field");
-                return;
-            }
-
-            // CRITICAL: Touch controller uses localPosition, NOT position!
-            Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
-            Vector3 targetPos = entity.GameEntity.transform.localPosition;
-
-            string formatted = entity.FormatDescription(playerController.fieldPlayer.transform.position);
-
-            // Check if path exists
-            var pathInfo = Field.FieldNavigationHelper.FindPathTo(
-                playerPos,
-                targetPos,
-                playerController.mapHandle,
-                playerController.fieldPlayer
-            );
-
-            // Announce entity info + path status + count at the end
-            string countSuffix = $", {entityNavigator.CurrentIndex + 1} of {entityNavigator.EntityCount}";
-            string announcement = pathInfo.Success ? $"{formatted}{countSuffix}" : $"{formatted}, no path{countSuffix}";
-            SpeakText(announcement);
-        }
-
-        internal void CycleNextCategory()
-        {
-            // Get cycleable categories and find current index
-            var cycleableCategories = CategoryRegistry.GetCycleableCategories().ToList();
-            int currentIndex = cycleableCategories.IndexOf(entityNavigator.CurrentCategory);
-            if (currentIndex < 0) currentIndex = 0;
-
-            // Cycle to next
-            int nextIndex = (currentIndex + 1) % cycleableCategories.Count;
-            EntityCategory newCategory = cycleableCategories[nextIndex];
-
-            // Update navigator category (automatically rebuilds list)
-            entityNavigator.SetCategory(newCategory);
-
-            // Announce new category and count
-            AnnounceCategoryChange();
-        }
-
-        internal void CyclePreviousCategory()
-        {
-            // Get cycleable categories and find current index
-            var cycleableCategories = CategoryRegistry.GetCycleableCategories().ToList();
-            int currentIndex = cycleableCategories.IndexOf(entityNavigator.CurrentCategory);
-            if (currentIndex < 0) currentIndex = 0;
-
-            // Cycle to previous
-            int prevIndex = currentIndex - 1;
-            if (prevIndex < 0) prevIndex = cycleableCategories.Count - 1;
-            EntityCategory newCategory = cycleableCategories[prevIndex];
-
-            // Update navigator category (automatically rebuilds list)
-            entityNavigator.SetCategory(newCategory);
-
-            // Announce new category and count
-            AnnounceCategoryChange();
-        }
-
-        internal void ResetToAllCategory()
-        {
-            if (entityNavigator.CurrentCategory == EntityCategory.All)
-            {
-                SpeakText("Already in All category");
-                return;
-            }
-
-            // Update navigator category (automatically rebuilds list)
-            entityNavigator.SetCategory(EntityCategory.All);
-
-            // Announce category change
-            AnnounceCategoryChange();
-        }
-
-        internal void TogglePathfindingFilter()
-        {
-            filterByPathfinding = !filterByPathfinding;
-
-            // Update navigator
-            entityNavigator.FilterByPathfinding = filterByPathfinding;
-
-            // Save to preferences
-            prefPathfindingFilter.Value = filterByPathfinding;
-            prefsCategory.SaveToFile(false);
-
-            string status = filterByPathfinding ? "on" : "off";
-            SpeakText($"Pathfinding filter {status}");
-        }
-
-        internal void ToggleMapExitFilter()
-        {
-            filterMapExits = !filterMapExits;
-
-            // Update navigator and rebuild list
-            entityNavigator.FilterMapExits = filterMapExits;
-            entityNavigator.RebuildNavigationList();
-
-            // Save to preferences
-            prefMapExitFilter.Value = filterMapExits;
-            prefsCategory.SaveToFile(false);
-
-            string status = filterMapExits ? "on" : "off";
-            SpeakText($"Map exit filter {status}");
-        }
-
-        private void AnnounceCategoryChange()
-        {
-            string categoryName = CategoryRegistry.GetDisplayName(entityNavigator.CurrentCategory);
-            int entityCount = entityNavigator.EntityCount;
-
-            string announcement = $"Category: {categoryName}, {entityCount} {(entityCount == 1 ? "entity" : "entities")}";
-            SpeakText(announcement);
-        }
-
-        internal void TeleportInDirection(Vector2 offset)
-        {
-            var entity = entityNavigator.CurrentEntity;
-            if (entity == null)
-            {
-                SpeakText("No entity selected");
-                return;
-            }
-
-            var playerController = Utils.GameObjectCache.Get<Il2CppLast.Map.FieldPlayerController>();
-            if (playerController?.fieldPlayer == null)
-            {
-                SpeakText("Player not available");
-                return;
-            }
-
-            var player = playerController.fieldPlayer;
-
-            // Calculate offset position relative to the target entity
-            // One cell = 16 units
-            Vector3 targetPos = entity.Position;
-            Vector3 newPos = new Vector3(targetPos.x + offset.x, targetPos.y + offset.y, targetPos.z);
-
-            // Instantly teleport by setting localPosition directly
-            player.transform.localPosition = newPos;
-
-            // Announce direction
-            string direction = GetDirectionName(offset);
-            SpeakText($"Teleported {direction} of {entity.Name}");
-            LoggerInstance.Msg($"Teleported {direction} of {entity.Name} to position {newPos}");
-        }
-
         /// <summary>
         /// Moves the map viewer cursor in the specified direction and announces tile contents.
         /// </summary>
@@ -509,15 +248,6 @@ namespace FFVI_ScreenReader.Core
             Vector3 playerPos = playerController.fieldPlayer.transform.localPosition;
             mapViewer.SnapToPlayer(playerPos);
             SpeakText("Cursor reset to player");
-        }
-
-        private string GetDirectionName(Vector2 offset)
-        {
-            if (offset.y > 0) return "north";
-            if (offset.y < 0) return "south";
-            if (offset.x < 0) return "west";
-            if (offset.x > 0) return "east";
-            return "unknown";
         }
 
         private void AnnounceCurrentCharacterStatus()

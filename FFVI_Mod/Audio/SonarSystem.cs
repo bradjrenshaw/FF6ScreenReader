@@ -232,6 +232,18 @@ namespace FFVI_ScreenReader.Audio
         }
 
         /// <summary>
+        /// Handles input for sonar system (toggle hotkey).
+        /// Note: This is called even when system is inactive to allow toggling on.
+        /// </summary>
+        /// <returns>True if input was consumed</returns>
+        public bool HandleInput()
+        {
+            // Sonar doesn't handle input - toggle is handled at a higher level
+            // since it needs to work even when the system is inactive
+            return false;
+        }
+
+        /// <summary>
         /// Updates the sonar system each frame.
         /// </summary>
         public void Update()

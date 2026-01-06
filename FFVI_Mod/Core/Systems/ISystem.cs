@@ -45,5 +45,12 @@ namespace FFVI_ScreenReader.Core.Systems
         /// </summary>
         /// <param name="sceneName">Name of the new scene</param>
         void OnSceneChanged(string sceneName);
+
+        /// <summary>
+        /// Called to handle input while the system is active.
+        /// Called after Update() in priority order.
+        /// </summary>
+        /// <returns>True if input was consumed and further systems should not process input, false otherwise</returns>
+        bool HandleInput();
     }
 }

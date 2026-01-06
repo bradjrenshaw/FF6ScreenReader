@@ -167,6 +167,35 @@ namespace FFVI_ScreenReader.Core.Systems
         }
 
         /// <summary>
+        /// Handles input for all active systems in priority order.
+        /// Stops processing when a system returns true (input consumed).
+        /// Should be called after Update().
+        /// </summary>
+        /// <returns>True if any system consumed the input</returns>
+        public bool HandleInput()
+        {
+            foreach (var system in systems)
+            {
+                if (!activeSystems.Contains(system))
+                    continue;
+
+                try
+                {
+                    if (system.HandleInput())
+                    {
+                        return true; // Input was consumed, stop processing
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Error($"[SystemManager] Error in '{system.Name}'.HandleInput: {ex.Message}");
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Gets whether a specific system is currently active.
         /// </summary>
         public bool IsSystemActive(ISystem system)

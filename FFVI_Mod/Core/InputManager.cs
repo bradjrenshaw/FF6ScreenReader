@@ -1,29 +1,33 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Il2Cpp;
+using FFVI_ScreenReader.Core.Systems;
 
 namespace FFVI_ScreenReader.Core
 {
     /// <summary>
-    /// Manages all keyboard input handling for the screen reader mod.
-    /// Detects hotkeys and routes them to appropriate mod functions.
+    /// Manages keyboard input handling for the screen reader mod.
+    /// Delegates system-specific input to SystemManager, handles global hotkeys directly.
     /// </summary>
     public class InputManager
     {
         private readonly FFVI_ScreenReaderMod mod;
+        private readonly SystemManager systemManager;
         private Il2CppSerial.FF6.UI.KeyInput.StatusDetailsController cachedStatusController;
 
-        public InputManager(FFVI_ScreenReaderMod mod)
+        public InputManager(FFVI_ScreenReaderMod mod, SystemManager systemManager)
         {
             this.mod = mod;
+            this.systemManager = systemManager;
         }
 
         /// <summary>
         /// Called every frame to check for input and route hotkeys.
+        /// Should be called after SystemManager.Update().
         /// </summary>
         public void Update()
         {
-            // Early exit if no keys pressed this frame - avoids expensive FindObjectOfType calls
+            // Early exit if no keys pressed this frame
             if (!Input.anyKeyDown)
             {
                 return;
@@ -32,51 +36,46 @@ namespace FFVI_ScreenReader.Core
             // Check if ANY Unity InputField is focused - if so, let all keys pass through
             if (IsInputFieldFocused())
             {
-                // Player is typing text - skip all hotkey processing
                 return;
             }
 
-            // Check if status details screen is active to route J/L keys appropriately
-            bool statusScreenActive = IsStatusScreenActive();
-
-            if (statusScreenActive)
+            // Check if status details screen is active - handle separately
+            if (IsStatusScreenActive())
             {
                 HandleStatusScreenInput();
+                // Don't return - global hotkeys should still work on status screen
             }
             else
             {
-                HandleFieldInput();
+                // Let active systems handle their input first
+                if (systemManager.HandleInput())
+                {
+                    return; // Input was consumed by a system
+                }
             }
 
-            // Global hotkeys (work in both field and status screen)
+            // Handle global hotkeys (work everywhere, not system-specific)
             HandleGlobalInput();
         }
 
         /// <summary>
         /// Checks if a Unity InputField is currently focused (player is typing).
-        /// Uses EventSystem for efficient O(1) lookup instead of FindObjectOfType scene search.
         /// </summary>
         private bool IsInputFieldFocused()
         {
             try
             {
-                // Check if EventSystem exists and has a selected object
                 if (EventSystem.current == null)
                     return false;
 
                 var currentObj = EventSystem.current.currentSelectedGameObject;
-
-                // 1. Check if anything is selected
                 if (currentObj == null)
                     return false;
 
-                // 2. Check if the selected object is a standard InputField
-                // TryGetComponent avoids memory allocation overhead
                 return currentObj.TryGetComponent(out UnityEngine.UI.InputField inputField);
             }
             catch (System.Exception ex)
             {
-                // If we can't check input field state, continue with normal hotkey processing
                 MelonLoader.MelonLogger.Warning($"Error checking input field state: {ex.Message}");
                 return false;
             }
@@ -84,11 +83,9 @@ namespace FFVI_ScreenReader.Core
 
         /// <summary>
         /// Checks if the status details screen is currently active.
-        /// Uses cached reference to avoid expensive FindObjectOfType calls.
         /// </summary>
         private bool IsStatusScreenActive()
         {
-            // Validate cache - check if controller exists and is still valid
             if (cachedStatusController == null || cachedStatusController.gameObject == null)
             {
                 cachedStatusController = Utils.GameObjectCache.Get<Il2CppSerial.FF6.UI.KeyInput.StatusDetailsController>();
@@ -104,11 +101,10 @@ namespace FFVI_ScreenReader.Core
         /// </summary>
         private void HandleStatusScreenInput()
         {
-            // Skip J/L if Ctrl is held (reserved for map viewer)
             if (IsCtrlHeld())
                 return;
 
-            // On status screen: J/[ announces physical stats, L/] announces magical stats
+            // J/[ announces physical stats, L/] announces magical stats
             if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.LeftBracket))
             {
                 string physicalStats = FFVI_ScreenReader.Menus.StatusDetailsReader.ReadPhysicalStats();
@@ -123,207 +119,94 @@ namespace FFVI_ScreenReader.Core
         }
 
         /// <summary>
-        /// Handles input when on the field (entity navigation).
-        /// </summary>
-        private void HandleFieldInput()
-        {
-            // Skip J/K/L if Ctrl is held (reserved for map viewer)
-            bool ctrlHeld = IsCtrlHeld();
-
-            // Hotkey: J or [ to cycle backwards (but not Ctrl+J)
-            if (!ctrlHeld && (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.LeftBracket)))
-            {
-                // Check for Shift+J/[ (cycle categories backward)
-                if (IsShiftHeld())
-                {
-                    mod.CyclePreviousCategory();
-                }
-                else
-                {
-                    // Just J/[ (cycle entities backward)
-                    mod.CyclePrevious();
-                }
-            }
-
-            // Hotkey: K to repeat current entity (but not Ctrl+K)
-            if (!ctrlHeld && Input.GetKeyDown(KeyCode.K))
-            {
-                mod.AnnounceEntityOnly();
-            }
-
-            // Hotkey: L or ] to cycle forwards (but not Ctrl+L)
-            if (!ctrlHeld && (Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.RightBracket)))
-            {
-                // Check for Shift+L/] (cycle categories forward)
-                if (IsShiftHeld())
-                {
-                    mod.CycleNextCategory();
-                }
-                else
-                {
-                    // Just L/] (cycle entities forward)
-                    mod.CycleNext();
-                }
-            }
-
-            // Hotkey: P or \ to pathfind to current entity
-            if (Input.GetKeyDown(KeyCode.P) || Input.GetKeyDown(KeyCode.Backslash))
-            {
-                // Check for Shift+P/\ (toggle pathfinding filter)
-                if (IsShiftHeld())
-                {
-                    mod.TogglePathfindingFilter();
-                }
-                else
-                {
-                    // Just P/\ (pathfind to current entity)
-                    mod.AnnounceCurrentEntity();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Handles global input (works in both field and status screen).
+        /// Handles global input (works everywhere, not system-specific).
         /// </summary>
         private void HandleGlobalInput()
         {
-            // Hotkey: Ctrl+Arrow to teleport in the direction of the arrow
-            if (IsCtrlHeld())
+            bool ctrlHeld = IsCtrlHeld();
+            bool shiftHeld = IsShiftHeld();
+
+            // Ctrl+I/K/J/L/O: Map viewer controls
+            if (ctrlHeld)
             {
-                if (Input.GetKeyDown(KeyCode.UpArrow))
-                {
-                    mod.TeleportInDirection(new Vector2(0, 16)); // North
-                }
-                else if (Input.GetKeyDown(KeyCode.DownArrow))
-                {
-                    mod.TeleportInDirection(new Vector2(0, -16)); // South
-                }
-                else if (Input.GetKeyDown(KeyCode.LeftArrow))
-                {
-                    mod.TeleportInDirection(new Vector2(-16, 0)); // West
-                }
-                else if (Input.GetKeyDown(KeyCode.RightArrow))
-                {
-                    mod.TeleportInDirection(new Vector2(16, 0)); // East
-                }
-                // Map viewer controls (Ctrl+I/K/J/L/O)
-                else if (Input.GetKeyDown(KeyCode.I))
+                if (Input.GetKeyDown(KeyCode.I))
                 {
                     mod.MapViewerMove(new Vector2(0, 16)); // North
+                    return;
                 }
-                else if (Input.GetKeyDown(KeyCode.K))
+                if (Input.GetKeyDown(KeyCode.K))
                 {
                     mod.MapViewerMove(new Vector2(0, -16)); // South
+                    return;
                 }
-                else if (Input.GetKeyDown(KeyCode.J))
+                if (Input.GetKeyDown(KeyCode.J))
                 {
                     mod.MapViewerMove(new Vector2(-16, 0)); // West
+                    return;
                 }
-                else if (Input.GetKeyDown(KeyCode.L))
+                if (Input.GetKeyDown(KeyCode.L))
                 {
                     mod.MapViewerMove(new Vector2(16, 0)); // East
+                    return;
                 }
-                else if (Input.GetKeyDown(KeyCode.O))
+                if (Input.GetKeyDown(KeyCode.O))
                 {
                     mod.MapViewerSnapToPlayer();
+                    return;
                 }
             }
 
-            // Hotkey: H to announce airship heading (if on airship) or character health (if in battle)
+            // H: Announce airship heading or character health
             if (Input.GetKeyDown(KeyCode.H))
             {
                 mod.AnnounceAirshipOrCharacterStatus();
             }
 
-            // Hotkey: G to announce current gil amount
+            // G: Announce gil
             if (Input.GetKeyDown(KeyCode.G))
             {
                 mod.AnnounceGilAmount();
             }
 
-            // Hotkey: M to announce current map name
-            if (Input.GetKeyDown(KeyCode.M))
+            // M: Announce current map (Shift+M handled by EntityNavigationSystem)
+            if (Input.GetKeyDown(KeyCode.M) && !shiftHeld)
             {
-                // Check for Shift+M (toggle map exit filter)
-                if (IsShiftHeld())
-                {
-                    mod.ToggleMapExitFilter();
-                }
-                else
-                {
-                    // Just M (announce current map)
-                    mod.AnnounceCurrentMap();
-                }
+                mod.AnnounceCurrentMap();
             }
 
-            // Hotkey: 0 (Alpha0) or Shift+K to reset to All category
-            if (Input.GetKeyDown(KeyCode.Alpha0))
-            {
-                mod.ResetToAllCategory();
-            }
-
-            if (Input.GetKeyDown(KeyCode.K) && IsShiftHeld())
-            {
-                mod.ResetToAllCategory();
-            }
-
-            // Hotkey: = (Equals) or Shift+L/] to cycle to next category
-            if (Input.GetKeyDown(KeyCode.Equals))
-            {
-                mod.CycleNextCategory();
-            }
-
-            // Hotkey: - (Minus) or Shift+J/[ to cycle to previous category
-            if (Input.GetKeyDown(KeyCode.Minus))
-            {
-                mod.CyclePreviousCategory();
-            }
-
-            // Hotkey: T to announce active timers
+            // T: Announce timers, Shift+T: Toggle freeze
             if (Input.GetKeyDown(KeyCode.T))
             {
-                // Check for Shift+T (freeze/resume timers)
-                if (IsShiftHeld())
-                {
+                if (shiftHeld)
                     Patches.TimerHelper.ToggleTimerFreeze();
-                }
                 else
-                {
-                    // Just T (announce timers)
                     Patches.TimerHelper.AnnounceActiveTimers();
-                }
             }
 
-            // Hotkey: 4 to toggle continuous sonar mode
+            // 4: Toggle sonar mode
             if (Input.GetKeyDown(KeyCode.Alpha4))
             {
                 mod.ToggleSonarMode();
             }
 
-            // Hotkey: 5 to debug colliders at cursor
+            // 5: Debug colliders at cursor
             if (Input.GetKeyDown(KeyCode.Alpha5))
             {
                 mod.DebugCollidersAtCursor();
             }
 
-            // Hotkey: 6 to play test exit sound
+            // 6: Play test exit sound
             if (Input.GetKeyDown(KeyCode.Alpha6))
             {
                 mod.PlayTestExitSound();
             }
         }
 
-        /// <summary>
-        /// Checks if either Shift key is held.
-        /// </summary>
         private bool IsShiftHeld()
         {
             return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         }
 
-        /// <summary>
-        /// Checks if either Ctrl key is held.
-        /// </summary>
         private bool IsCtrlHeld()
         {
             return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
