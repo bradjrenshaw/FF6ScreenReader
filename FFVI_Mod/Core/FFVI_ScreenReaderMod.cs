@@ -26,12 +26,10 @@ namespace FFVI_ScreenReader.Core
         private EntityNavigationSystem entityNavigationSystem;
         private MapViewerSystem mapViewerSystem;
         private SystemManager systemManager;
+        private MapTransitionSystem mapTransitionSystem;
 
         // Entity scanning
         private const float ENTITY_SCAN_INTERVAL = 5f;
-
-        // Map transition tracking
-        private int lastAnnouncedMapId = -1;
 
         public override void OnInitializeMelon()
         {
@@ -53,6 +51,10 @@ namespace FFVI_ScreenReader.Core
             // Initialize map viewer system (depends on entityCache)
             mapViewerSystem = new MapViewerSystem(entityCache);
             systemManager.Register(mapViewerSystem);
+
+            // Initialize map transition system (depends on entityCache and mapViewerSystem)
+            mapTransitionSystem = new MapTransitionSystem(entityCache, mapViewerSystem);
+            systemManager.Register(mapTransitionSystem);
 
             // Initialize entity navigation system (depends on entityCache)
             entityNavigationSystem = new EntityNavigationSystem(entityCache);
@@ -138,21 +140,6 @@ namespace FFVI_ScreenReader.Core
             LoggerInstance.Msg("[ComponentCache] Delayed initial entity scan completed");
         }
 
-        /// <summary>
-        /// Coroutine that delays entity scanning after map transition to allow entities to spawn.
-        /// </summary>
-        private System.Collections.IEnumerator DelayedMapTransitionScan()
-        {
-            // Wait 0.5 seconds for new map entities to spawn
-            yield return new UnityEngine.WaitForSeconds(0.5f);
-
-            // Scan for entities - EntityNavigator will be updated via OnEntityAdded/OnEntityRemoved events
-            // No need to call RebuildNavigationList() as the event handlers already filter and add entities
-            entityCache.ForceScan();
-
-            LoggerInstance.Msg("[ComponentCache] Delayed map transition entity scan completed");
-        }
-
         public override void OnUpdate()
         {
             // Update entity cache (handles periodic rescanning)
@@ -161,48 +148,8 @@ namespace FFVI_ScreenReader.Core
             // Update all managed systems (handles activation/deactivation and updates)
             systemManager.Update();
 
-            // Check for map transitions
-            CheckMapTransition();
-
             // Handle all input
             inputManager.Update();
-        }
-
-        /// <summary>
-        /// Checks for map transitions and announces the new map name.
-        /// </summary>
-        private void CheckMapTransition()
-        {
-            try
-            {
-                var userDataManager = Il2CppLast.Management.UserDataManager.Instance();
-                if (userDataManager != null)
-                {
-                    int currentMapId = userDataManager.CurrentMapId;
-                    if (currentMapId != lastAnnouncedMapId && lastAnnouncedMapId != -1)
-                    {
-                        // Map has changed, announce the new map
-                        string mapName = Field.MapNameResolver.GetCurrentMapName();
-                        SpeakText($"Entering {mapName}", interrupt: false);
-                        lastAnnouncedMapId = currentMapId;
-
-                        // Reset map viewer cursor on map transition (silent)
-                        mapViewerSystem?.SnapToPlayer(announce: false);
-
-                        // Delay entity scan to allow new map to fully initialize
-                        CoroutineManager.StartManaged(DelayedMapTransitionScan());
-                    }
-                    else if (lastAnnouncedMapId == -1)
-                    {
-                        // First run, just store the current map without announcing
-                        lastAnnouncedMapId = currentMapId;
-                    }
-                }
-            }
-            catch (System.Exception ex)
-            {
-                LoggerInstance.Warning($"Error detecting map transition: {ex.Message}");
-            }
         }
 
         private void AnnounceCurrentCharacterStatus()
